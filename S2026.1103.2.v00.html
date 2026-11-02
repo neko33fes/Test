@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IC 即時自動檢測 App</title>
+    <!-- 引入 Tesseract.js 用於網頁端文字辨識 -->
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <style>
+        body { font-family: sans-serif; background: #111; color: #fff; text-align: center; margin: 0; padding: 10px; }
+        .video-container { position: relative; width: 100%; max-width: 400px; margin: 0 auto; }
+        video { width: 100%; border-radius: 8px; border: 2px solid #555; display: block; }
+        canvas { display: none; }
+        .status-box { margin: 15px auto; padding: 20px; max-width: 400px; font-size: 26px; font-weight: bold; border-radius: 10px; transition: 0.3s; }
+        .pending { background: #f57c00; color: #fff; }
+        .pass { background: #2e7d32; color: #fff; }
+        .fail { background: #c62828; color: #fff; }
+        .input-group { margin: 10px 0; }
+        input { padding: 10px; font-size: 18px; width: 80%; max-width: 300px; border-radius: 5px; border: none; text-align: center; background: #222; color: #fff; border: 1px solid #444; }
+        p { font-size: 14px; color: #aaa; }
+    </style>
+</head>
+<body>
+
+    <h2>IC 表面文字即時檢測</h2>
+    
+    <div class="input-group">
+        <label>預期型號：</label><br>
+        <input type="text" id="expectedText" value="NE5532P">
+    </div>
+
+    <!-- 手機相機即時預覽畫面 -->
+    <div class="video-container">
+        <video id="video" autoplay playsinline muted></video>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <!-- 即時狀態大看板 -->
+    <div id="statusBox" class="status-box pending">等待對準 IC...</div>
+    <p id="detectedText">即時識別文字：無</p>
+    <p>（請將 IC 靠近鏡頭並保持穩定，系統將自動辨識）</p>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const statusBox = document.getElementById('statusBox');
+        const detectedTextEl = document.getElementById('detectedText');
+        const expectedInput = document.getElementById('expectedText');
+
+        let worker = null;
+        let isProcessing = false;
+
+        // 初始化 Tesseract Worker
+        async function initOCR() {
+            statusBox.innerText = "載入辨識引擎中...";
+            worker = await Tesseract.createWorker('eng');
+            statusBox.className = "status-box pending";
+            statusBox.innerText = "引擎就緒，請對準 IC";
+            startCamera();
+        }
+
+        // 啟動手機後鏡頭
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { exact: "environment" } } // 優先嘗試後鏡頭
+                }).catch(() => {
+                    return navigator.mediaDevices.getUserMedia({ video: true }); // 若不行則用預設鏡頭
+                });
+                video.srcObject = stream;
+                video.play();
+                
+                // 開始背景連續辨識循環
+                setInterval(processFrame, 2500); // 每 2.5 秒自動抓取畫面辨識一次，避免過熱
+            } catch (err) {
+                alert("無法開啟相機，請檢查瀏覽器相機權限！");
+                statusBox.innerText = "相機開啟失敗";
+            }
+        }
+
+        // 自動擷取畫面並辨識
+        async function processFrame() {
+            if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            
+            isProcessing = true;
+
+            try {
+                // 將當前畫面畫到隱藏的 Canvas
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // 執行辨識
+                const { data: { text } } = await worker.recognize(canvas);
+                const cleanText = text.replace(/\s+/g, ' ').trim();
+                
+                if (cleanText) {
+                    detectedTextEl.innerText = "即時識別文字：" + cleanText;
+                }
+
+                const expected = expectedInput.value.trim().toUpperCase();
+                
+                // 比對結果
+                if (expected && cleanText.toUpperCase().includes(expected)) {
+                    statusBox.className = "status-box pass";
+                    statusBox.innerText = "【 PASS 】型號相符";
+                } else {
+                    statusBox.className = "status-box fail";
+                    statusBox.innerText = "【 FAIL 】型號不符";
+                }
+            } catch (error) {
+                console.error(error);
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        // 網頁載入後自動初始化
+        window.onload = initOCR;
+    </script>
+</body>
+</html>
