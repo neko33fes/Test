@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IC 即時自動檢測 App (優化版)</title>
+    <!-- 引入 Tesseract.js 用於網頁端文字辨識 -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #111; color: #fff; text-align: center; margin: 0; padding: 10px; }
+        .video-container { position: relative; width: 100%; max-width: 400px; margin: 0 auto; }
+        video { width: 100%; border-radius: 8px; border: 2px solid #555; display: block; }
+        /* 提示對焦框 */
+        .scan-overlay {
+            position: absolute; top: 25%; left: 10%; width: 80%; height: 50%;
+            border: 2px dashed #00e676; border-radius: 4px; box-sizing: border-box;
+            pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+        }
+        canvas { display: none; }
+        .status-box { margin: 15px auto; padding: 20px; max-width: 400px; font-size: 26px; font-weight: bold; border-radius: 10px; transition: 0.3s; }
+        .pending { background: #f57c00; color: #fff; }
+        .scanning { background: #29b6f6; color: #fff; }
+        .pass { background: #2e7d32; color: #fff; }
+        .fail { background: #c62828; color: #fff; }
+        .input-group { margin: 10px 0; }
+        input { padding: 10px; font-size: 18px; width: 80%; max-width: 300px; border-radius: 5px; border: none; text-align: center; background: #222; color: #fff; border: 1px solid #444; }
+        p { font-size: 14px; color: #aaa; }
+    </style>
+</head>
+<body>
+
+    <h2>IC 表面文字即時檢測</h2>
+    
+    <div class="input-group">
+        <label>預期型號：</label><br>
+        <input type="text" id="expectedText" value="NE5532P">
+    </div>
+
+    <!-- 手機相機即時預覽畫面 -->
+    <div class="video-container">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="scan-overlay"></div>
+    </div>
+    <!-- 隱藏的 canvas 用於擷取與預處理影像 -->
+    <canvas id="canvas"></canvas>
+
+    <!-- 即時狀態大看板 -->
+    <div id="statusBox" class="status-box pending">載入中...</div>
+    <p id="detectedText">即時識別文字：無</p>
+    <p>（請將 IC 置於對焦框內並保持穩定）</p>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const statusBox = document.getElementById('statusBox');
+        const detectedTextEl = document.getElementById('detectedText');
+        const expectedInput = document.getElementById('expectedText');
+
+        let worker = null;
+        let isProcessing = false;
+        let scanInterval = null;
+
+        // 初始化 Tesseract Worker
+        async function initOCR() {
+            try {
+                statusBox.className = "status-box pending";
+                statusBox.innerText = "載入辨識引擎中...";
+                
+                // 建立 Worker 並明確指定英文語系與預載
+                worker = await Tesseract.createWorker('eng');
+                
+                statusBox.innerText = "引擎就緒，開啟相機中...";
+                await startCamera();
+            } catch (err) {
+                console.error(err);
+                statusBox.className = "status-box fail";
+                statusBox.innerText = "引擎初始化失敗";
+            }
+        }
+
+        // 啟動手機後鏡頭（優化解析度與對焦）
+        async function startCamera() {
+            const constraints = {
+                video: {
+                    facingMode: { ideal: "environment" },
+                    // 工業小元件建議要求較高解析度以利清晰對焦
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                
+                // 當影片真正開始播放時再允許檢測
+                video.onloadedmetadata = () => {
+                    statusBox.className = "status-box scanning";
+                    statusBox.innerText = "請將 IC 對準綠色框";
+                    
+                    // 開始背景連續辨識循環（2秒一次，兼顧效能與發熱）
+                    if (scanInterval) clearInterval(scanInterval);
+                    scanInterval = setInterval(processFrame, 2000);
+                };
+            } catch (err) {
+                console.error(err);
+                alert("無法開啟後置鏡頭，嘗試開啟預設相機。請檢查權限！");
+                try {
+                    const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    video.srcObject = fallbackStream;
+                } catch (fallbackErr) {
+                    statusBox.className = "status-box fail";
+                    statusBox.innerText = "相機開啟失敗";
+                }
+            }
+        }
+
+        // 自動擷取畫面、預處理並辨識
+        async function processFrame() {
+            // 如果引擎沒好、正在處理中、或是影像流尚未穩定則跳過
+            if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            
+            isProcessing = true;
+
+            try {
+                // 設定 Canvas 解析度（與視訊流相同）
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                
+                // 【影像預處理】加入濾鏡提升 OCR 辨識率（轉換為灰階並提高對比）
+                ctx.filter = 'grayscale(1) contrast(1.5)';
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // 還原濾鏡設定以免影像疊加錯誤
+                ctx.filter = 'none';
+
+                // 執行辨識
+                const { data: { text } } = await worker.recognize(canvas);
+                
+                // 整理文字：移除非必要字元、換行取代為空白、轉大寫
+                const cleanText = text.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+                const expected = expectedInput.value.trim().toUpperCase();
+                
+                if (!cleanText) {
+                    // 若這張圖完全沒驗出任何字，保持掃描狀態不判 FAIL
+                    detectedTextEl.innerText = "即時識別文字：未感測到文字";
+                    statusBox.className = "status-box scanning";
+                    statusBox.innerText = "請靠近、保持穩定並對焦";
+                    return;
+                }
+
+                detectedTextEl.innerText = "即時識別文字：" + cleanText;
+
+                // 比對結果
+                if (expected && cleanText.includes(expected)) {
+                    statusBox.className = "status-box pass";
+                    statusBox.innerText = "【 PASS 】型號相符";
+                } else {
+                    statusBox.className = "status-box fail";
+                    statusBox.innerText = "【 FAIL 】型號不符";
+                }
+                
+            } catch (error) {
+                console.error("辨識過程發生錯誤:", error);
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        // 網頁載入後自動初始化
+        window.onload = initOCR;
+    </script>
+</body>
+</html>
