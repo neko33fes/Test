@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>中英文字檢測 App (中央對焦最佳化版)</title>
+    <title>中英文字檢測 App (全景簡潔版)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -29,29 +29,7 @@
             text-align: center; 
         }
 
-        /* 1x / 2x 切換按鈕群組 */
-        .zoom-group {
-            margin: 8px 0;
-        }
-        .zoom-btn {
-            background: #222;
-            color: #aaa;
-            border: 1px solid #444;
-            padding: 6px 16px;
-            font-size: 14px;
-            font-weight: bold;
-            border-radius: 4px;
-            cursor: pointer;
-            margin: 0 4px;
-            transition: 0.2s;
-        }
-        .zoom-btn.active {
-            background: #00e676;
-            color: #121212;
-            border-color: #00e676;
-        }
-
-        /* 具備響應式適應力的相機預覽框 */
+        /* 全景相機預覽框 (無遮罩、無多餘外框，保持全視野) */
         .video-container { 
             position: relative; 
             width: 100%; 
@@ -72,65 +50,7 @@
         }
         canvas { display: none; }
         
-        /* 框外遮罩陰影：利用 Box-shadow 讓框外變暗，強烈提示「框外不掃描」 */
-        .scan-mask {
-            position: absolute;
-            top: 50%;
-            left: 5%;
-            right: 5%;
-            height: 35%;
-            transform: translateY(-50%);
-            pointer-events: none;
-            z-index: 8;
-            box-sizing: border-box;
-            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6); 
-        }
-
-        /* 四角定位瞄準框 (綠色直角，長度 10px) - 位於畫面絕對中心 */
-        .corner-box {
-            position: absolute;
-            top: 50%;
-            left: 5%;
-            right: 5%;
-            height: 35%;
-            transform: translateY(-50%);
-            pointer-events: none;
-            z-index: 9;
-            box-sizing: border-box;
-        }
-        .corner-box::before, .corner-box::after {
-            content: '';
-            position: absolute;
-            width: 10px; 
-            height: 10px; 
-            border-color: #00e676; /* 亮綠色瞄準框 */
-            border-style: solid;
-        }
-        .corner-box::before {
-            top: 0; left: 0;
-            border-width: 3px 0 0 3px;
-        }
-        .corner-box::after {
-            top: 0; right: 0;
-            border-width: 3px 3px 0 0;
-        }
-        .corner-bottom-left, .corner-bottom-right {
-            position: absolute;
-            width: 10px; 
-            height: 10px; 
-            border-color: #00e676;
-            border-style: solid;
-        }
-        .corner-bottom-left {
-            bottom: 0; left: 0;
-            border-width: 0 0 3px 3px;
-        }
-        .corner-bottom-right {
-            bottom: 0; right: 0;
-            border-width: 0 3px 3px 0;
-        }
-
-        /* 中央基準紅線：正中心對焦基準線 */
+        /* 中央基準紅線：維持對齊參考 */
         .scan-line {
             position: absolute;
             top: 50%;
@@ -174,22 +94,9 @@
         <input type="text" id="expectedText" value="NE5532P">
     </div>
 
-    <!-- 1x / 2x 縮放開關 -->
-    <div class="zoom-group">
-        <button id="btn1x" class="zoom-btn active" onclick="setZoom(1)">1x</button>
-        <button id="btn2x" class="zoom-btn" onclick="setZoom(2)">2x</button>
-    </div>
-
-    <!-- 相機與掃描框 -->
+    <!-- 全景相機與紅線 -->
     <div class="video-container" id="videoContainer">
         <video id="video" autoplay playsinline muted></video>
-        <!-- 框外遮罩 (讓框外變暗，框內有效區進行掃描) -->
-        <div class="scan-mask"></div>
-        <!-- 四角定位瞄準框 (置中) -->
-        <div class="corner-box">
-            <div class="corner-bottom-left"></div>
-            <div class="corner-bottom-right"></div>
-        </div>
         <div class="scan-line"></div>
     </div>
     <canvas id="canvas"></canvas>
@@ -197,7 +104,7 @@
     <!-- 狀態顯示 -->
     <div id="statusBox" class="status-box pending">正在載入中英文字型模型...</div>
     <p id="detectedText">識別文字：無</p>
-    <p>（請將目標文字對準中央綠色框與紅線，點擊畫面可手動觸發對焦）</p>
+    <p>（請將目標文字對準中央紅線，點擊畫面可手動觸發對焦）</p>
 
     <script>
         const video = document.getElementById('video');
@@ -206,20 +113,21 @@
         const expectedInput = document.getElementById('expectedText');
         const videoContainer = document.getElementById('videoContainer');
         const detectedTextEl = document.getElementById('detectedText');
-        const btn1x = document.getElementById('btn1x');
-        const btn2x = document.getElementById('btn2x');
 
         let videoTrack = null;
         let worker = null;
         let isProcessing = false;
-        let minZoom = 1;
-        let maxZoom = 1;
 
         // 初始化 Tesseract AI 辨識引擎 (同時載入英文與繁體中文)
         async function initOCR() {
             try {
                 statusBox.innerText = "載入中英文字型模型中 (初次需下載較大檔案，請稍候)...";
                 worker = await Tesseract.createWorker(['eng', 'chi_tra']);
+
+                // 設定為單行文字模式，確保後台辨識速度流暢
+                await worker.setParameters({
+                    tessedit_pageseg_mode: '7', 
+                });
 
                 statusBox.className = "status-box pending";
                 statusBox.innerText = "引擎就緒，請開始中英文檢測";
@@ -252,22 +160,18 @@
 
                 videoContainer.addEventListener('click', () => triggerFastManualFocus());
 
-                // 每 2.5 秒執行一次中央區域辨識
-                setInterval(processFrame, 2500);
+                // 每 2 秒執行一次背景高速辨識
+                setInterval(processFrame, 2000);
             } catch (err) {
                 alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS！");
                 statusBox.innerText = "相機開啟失敗";
             }
         }
 
-        // 讀取相機支援的縮放範圍與對焦設定
+        // 讀取相機對焦設定
         async function applyCameraCapabilities(track) {
             try {
                 const capabilities = track.getCapabilities();
-                if (capabilities.zoom) {
-                    minZoom = capabilities.zoom.min;
-                    maxZoom = capabilities.zoom.max;
-                }
                 if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
                     await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
                 }
@@ -276,38 +180,7 @@
             }
         }
 
-        // 切換 1x / 2x 縮放倍率
-        async function setZoom(level) {
-            if (!videoTrack) return;
-            try {
-                const capabilities = videoTrack.getCapabilities();
-                let targetZoom = 1;
-
-                if (level === 2) {
-                    if (capabilities.zoom) {
-                        targetZoom = Math.min(2, maxZoom);
-                        await videoTrack.applyConstraints({ advanced: [{ zoom: targetZoom }] });
-                    } else {
-                        video.style.transform = "scale(2)";
-                    }
-                    btn1x.className = "zoom-btn";
-                    btn2x.className = "zoom-btn active";
-                } else {
-                    if (capabilities.zoom) {
-                        targetZoom = minZoom;
-                        await videoTrack.applyConstraints({ advanced: [{ zoom: targetZoom }] });
-                    } else {
-                        video.style.transform = "scale(1)";
-                    }
-                    btn1x.className = "zoom-btn active";
-                    btn2x.className = "zoom-btn";
-                }
-            } catch (err) {
-                console.log("縮放設定失敗", err);
-            }
-        }
-
-        // 核心：嚴格限定只抓取畫面正中央瞄準框內的影像進行辨識
+        // 核心：全景畫面顯示，但背景自動擷取中央區域進行高速辨識
         async function processFrame() {
             if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
             
@@ -319,20 +192,20 @@
 
                 const containerHeight = videoContainer.clientHeight;
                 
-                // 與中央瞄準框嚴格對應的比例 (寬度 90% [左右各5%]，高度 35%)
+                // 於背景自動擷取畫面正中央區域（寬 90%、高 35%）進行運算，兼顧全景視野與辨識速度
                 const heightPercentage = 0.35; 
                 const uiBoxHeightPx = containerHeight * heightPercentage;
 
                 const boxW = vWidth * 0.9; 
                 const boxH = uiBoxHeightPx * (vHeight / containerHeight);
                 const boxX = (vWidth - boxW) / 2;
-                const boxY = (vHeight - boxH) / 2; // 正中央計算
+                const boxY = (vHeight - boxH) / 2;
 
                 canvas.width = boxW;   
                 canvas.height = boxH;
                 const ctx = canvas.getContext('2d');
 
-                // 1. 嚴格只把中央瞄準框內的畫面畫進 canvas
+                // 1. 擷取中央區域影像
                 ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, boxW, boxH);
 
                 // 2. 影像前處理：轉為灰階並增強對比
@@ -347,7 +220,7 @@
                 }
                 ctx.putImageData(imgData, 0, 0);
 
-                // 3. 執行辨識 (僅對中央框內區域)
+                // 3. 執行辨識
                 const { data: { text } } = await worker.recognize(canvas);
                 const cleanText = text.replace(/[\s\r\n]+/g, '').trim();
                 
