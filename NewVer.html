@@ -3,147 +3,207 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IC 局部檢測 App (快速對焦版)</title>
+    <title>IC 局部檢測 App (正式安全版)</title>
     <style>
+        /* 保持原本 App 的深色底風格 */
         body {
-            font-family: Arial, sans-serif;
-            background-color: #1c1c1e;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
             color: #ffffff;
+            margin: 0;
+            padding: 20px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
         }
-        .container {
-            text-align: center;
-            width: 90%;
-            max-width: 500px;
+
+        h2 {
+            margin-bottom: 5px;
+            font-size: 22px;
         }
-        .video-wrapper {
+
+        .subtitle {
+            color: #aaaaaa;
+            font-size: 14px;
+            margin-top: 0;
+            margin-bottom: 25px;
+        }
+
+        .info-section {
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+
+        .label {
+            color: #8e8e93;
+            font-size: 14px;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .value {
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+
+        /* 原本的相機視窗 Frame 與綠色框結構 */
+        .camera-container {
             position: relative;
             width: 100%;
+            max-width: 400px;
             aspect-ratio: 4 / 3;
-            background-color: #000;
-            border-radius: 12px;
+            background-color: #000000;
+            border-radius: 8px;
             overflow: hidden;
             margin-bottom: 20px;
         }
+
         video {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
-        /* 綠色對焦辨識框 */
-        .focus-box {
+
+        /* 綠色對焦框 */
+        .green-frame {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 60%;
-            height: 40%;
+            width: 65%;
+            height: 45%;
             border: 3px solid #30d158;
-            border-radius: 8px;
-            box-shadow: 0 0 20px rgba(48, 209, 88, 0.4);
+            border-radius: 6px;
+            box-shadow: 0 0 15px rgba(48, 209, 88, 0.3);
             pointer-events: none;
         }
-        button {
+
+        /* 啟動按鈕 */
+        .btn-start {
+            width: 100%;
+            max-width: 400px;
             background-color: #34c759;
-            color: white;
+            color: #ffffff;
             border: none;
-            padding: 12px 24px;
+            padding: 14px;
             font-size: 16px;
             font-weight: bold;
             border-radius: 8px;
             cursor: pointer;
-            transition: background-color 0.2s;
+            box-sizing: border-box;
+            transition: background-color 0.1s;
         }
-        button:active {
+
+        .btn-start:active {
             background-color: #248a3d;
         }
-        .status {
-            margin-top: 15px;
+
+        /* 提示區域 */
+        .tip-box {
+            width: 100%;
+            max-width: 400px;
+            margin-top: 25px;
+            background-color: #1c1c1e;
+            padding: 12px;
+            border-radius: 8px;
+            box-sizing: border-box;
             font-size: 14px;
-            color: #eaeaea;
+            line-height: 1.5;
+            color: #aeaeb2;
         }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>IC 表面文字即時檢測</h2>
-    <p>預期型號：NE5532P</p>
+    <h2>IC 局部檢測 App (正式安全版)</h2>
+    <div class="subtitle">## IC 表面文字即時檢測</div>
 
-    <div class="video-wrapper">
-        <video id="webcam" autoplay playsinline></video>
-        <div class="focus-box"></div>
+    <!-- 資訊顯示區 -->
+    <div class="info-section">
+        <div class="label">預期型號：</div>
+        <div class="value">NE5532P</div>
+        
+        <div class="label">狀態：</div>
+        <div class="value" id="status-text" style="color: #ff9500;">等待點擊啟動...</div>
     </div>
 
-    <button id="start-btn">啟動檢測 App</button>
-    <div class="status" id="status-text">狀態：等待點擊啟動...</div>
-</div>
+    <!-- 相機影像與綠色框 -->
+    <div class="camera-container">
+        <video id="webcam" autoplay playsinline></video>
+        <div class="green-frame"></div>
+    </div>
+
+    <!-- 操作按鈕 -->
+    <button class="btn-start" id="start-btn">啟動檢測 App</button>
+
+    <!-- 即時識別結果 -->
+    <div class="info-section" style="margin-top: 20px;">
+        <div class="label">即時識別：</div>
+        <div class="value" id="result-text">無</div>
+    </div>
+
+    <!-- 提示訊息 -->
+    <div class="tip-box">
+        💡 提示：請將晶片拉近，讓字體填滿綠色框以獲得最佳辨識率。
+    </div>
 
 <script>
-    const video = document.getElementById('webcam');
+    const videoElement = document.getElementById('webcam');
     const startBtn = document.getElementById('start-btn');
     const statusText = document.getElementById('status-text');
 
     startBtn.addEventListener('click', async () => {
-        statusText.innerText = "狀態：正在請求相機並優化對焦...";
+        statusText.innerText = "正在啟動鏡頭並優化對焦...";
+        statusText.style.color = "#34c759";
         
         try {
-            // 1. 基本設定：指定使用後置鏡頭 (environment)
+            // 呼叫後置主鏡頭，並使用高解析度確保 IC 晶片細小文字清晰
             const constraints = {
                 video: {
                     facingMode: { ideal: "environment" },
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
                 },
                 audio: false
             };
 
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            video.srcObject = stream;
+            videoElement.srcObject = stream;
 
-            // 2. 核心：等串流載入後，強制將鏡頭推向「快速/持續自動對焦」
-            video.onloadedmetadata = async () => {
+            // 當相機串流成功載入時，發送硬體持續快速對焦指令
+            videoElement.onloadedmetadata = async () => {
                 const track = stream.getVideoTracks()[0];
-                const capabilities = track.getCapabilities ? track.getCapabilities() : {};
                 
-                statusText.innerText = "狀態：相機已啟動，調整對焦模式...";
-
-                // 檢查瀏覽器是否支援進階對焦模式設定 (主要支援於 Android Chrome)
-                if (capabilities.focusMode) {
-                    const focusConstraints = {};
+                // 檢查行動裝置瀏覽器是否支援進階硬體對焦控制 (如 Android Chrome)
+                if (track && typeof track.getCapabilities === 'function') {
+                    const capabilities = track.getCapabilities();
                     
-                    // 優先選用持續自動對焦 (continuous)，其次是自動對焦 (auto)
-                    if (capabilities.focusMode.includes('continuous')) {
-                        focusConstraints.focusMode = 'continuous';
-                    } else if (capabilities.focusMode.includes('auto')) {
-                        focusConstraints.focusMode = 'auto';
-                    }
+                    if (capabilities.focusMode) {
+                        const advancedConstraints = {};
 
-                    // 如果支援微距/近距離對焦 (例如近看 IC 晶片文字)，強制寫入
-                    if (capabilities.focusDistance) {
-                        statusText.innerText = "狀態：已啟用近距離高速辨識模式";
-                    }
+                        // 強制開啟 continuous 模式（硬體持續自動對焦），晶片拉近時便能瞬間清晰
+                        if (capabilities.focusMode.includes('continuous')) {
+                            advancedConstraints.focusMode = 'continuous';
+                        } else if (capabilities.focusMode.includes('auto')) {
+                            advancedConstraints.focusMode = 'auto';
+                        }
 
-                    // 將對焦約束條件應用到鏡頭上
-                    if (Object.keys(focusConstraints).length > 0) {
-                        await track.applyConstraints({ advanced: [focusConstraints] });
-                        statusText.innerText = "狀態：即時檢測中 (已開啟持續快速對焦)";
-                    } else {
-                        statusText.innerText = "狀態：即時檢測中 (使用硬體預設對焦)";
+                        // 套用持續快速對焦設定
+                        if (Object.keys(advancedConstraints).length > 0) {
+                            await track.applyConstraints({ advanced: [advancedConstraints] });
+                        }
                     }
-                } else {
-                    statusText.innerText = "狀態：即時檢測中 (此瀏覽器不支援進階對焦設定)";
                 }
+                statusText.innerText = "檢測中...";
             };
 
         } catch (error) {
-            console.error("無法開啟相機:", error);
-            statusText.innerText = "錯誤：無法存取相機，請檢查權限設定。";
+            console.error("相機存取失敗:", error);
+            statusText.innerText = "錯誤：無法開啟相機，請檢查授權設定。";
+            statusText.style.color = "#ff3b30";
         }
     });
 </script>
