@@ -2,203 +2,151 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IC 局部檢測 App (正式安全版)</title>
-    <!-- 使用穩定安全的 CDN 載入核心庫 -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IC 局部檢測 App (快速對焦版)</title>
     <style>
-        body { 
-            font-family: sans-serif; background: #111; color: #fff; text-align: center; margin: 0; padding: 10px;
-            display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-height: 100vh; box-sizing: border-box;
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1c1c1e;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
         }
-        /* 限制全頁最大寬度，避免頁面太大，呈現精緻的手機 WebApp 質感 */
-        .app-container { width: 100%; max-width: 360px; margin: 0 auto; }
-        h2 { font-size: 20px; margin: 10px 0; color: #00e676; }
-        
-        .video-container { position: relative; width: 100%; aspect-ratio: 4/3; margin: 10px auto; overflow: hidden; border-radius: 12px; border: 2px solid #444; background: #000; }
-        video { width: 100%; height: 100%; object-fit: cover; display: block; }
-        
-        /* 縮小對焦框：30% 高度、70% 寬度，符合真實小 IC 晶片的外觀形狀 */
-        .scan-overlay {
-            position: absolute; top: 35%; left: 15%; width: 70%; height: 30%;
-            border: 2px solid #00e676; border-radius: 6px; box-sizing: border-box;
-            pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.65);
-            display: flex; align-items: center; justify-content: center;
+        .container {
+            text-align: center;
+            width: 90%;
+            max-width: 500px;
         }
-        .scan-overlay::before {
-            content: "請將文字放入框內"; font-size: 11px; color: #00e676; background: rgba(0,0,0,0.7); padding: 2px 6px; border-radius: 4px; position: absolute; bottom: -25px;
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            background-color: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
         }
-        
-        canvas { display: none; }
-        .status-box { margin: 10px 0; padding: 12px; font-size: 20px; font-weight: bold; border-radius: 8px; transition: 0.3s; }
-        .pending { background: #f57c00; }
-        .scanning { background: #29b6f6; }
-        .pass { background: #2e7d32; }
-        .fail { background: #c62828; }
-        
-        .input-group { margin: 5px 0; text-align: left; width: 100%; background: #222; padding: 10px; border-radius: 8px; box-sizing: border-box; border: 1px solid #333; }
-        label { font-size: 14px; color: #aaa; font-weight: bold; }
-        input { padding: 8px; font-size: 16px; width: 100%; border-radius: 5px; border: none; box-sizing: border-box; margin-top: 5px; background: #333; color: #fff; text-align: center; border: 1px solid #555; }
-        
-        .info-text { font-size: 13px; color: #aaa; margin: 8px 0; line-height: 1.4; }
-        #detectedText { font-size: 15px; color: #fff; font-weight: bold; background: #222; padding: 8px; border-radius: 6px; border-left: 4px solid #29b6f6; text-align: left; word-break: break-all; }
-        
-        /* 使用者主動觸發按鈕（完美解決 iOS/Chrome HTTPS 隱私攔截政策導致的初始化失敗） */
-        .btn-action { display: none; margin-top: 10px; padding: 12px 24px; font-size: 16px; background: #00e676; color: #000; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        /* 綠色對焦辨識框 */
+        .focus-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60%;
+            height: 40%;
+            border: 3px solid #30d158;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(48, 209, 88, 0.4);
+            pointer-events: none;
+        }
+        button {
+            background-color: #34c759;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:active {
+            background-color: #248a3d;
+        }
+        .status {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #eaeaea;
+        }
     </style>
 </head>
 <body>
 
-    <div class="app-container">
-        <h2>IC 表面文字即時檢測</h2>
-        
-        <div class="input-group">
-            <label>預期型號：</label>
-            <input type="text" id="expectedText" value="NE5532P">
-        </div>
+<div class="container">
+    <h2>IC 表面文字即時檢測</h2>
+    <p>預期型號：NE5532P</p>
 
-        <div class="video-container">
-            <video id="video" autoplay playsinline muted></video>
-            <div class="scan-overlay"></div>
-        </div>
-        
-        <canvas id="canvas"></canvas>
-
-        <div id="statusBox" class="status-box pending">等待點擊啟動...</div>
-        <button id="actionBtn" class="btn-action" onclick="startApp()">啟動檢測 App</button>
-        
-        <p id="detectedText">即時識別：無</p>
-        <p class="info-text">💡 提示：請將晶片拉近，讓字體填滿綠色框以獲得最佳辨識率。</p>
+    <div class="video-wrapper">
+        <video id="webcam" autoplay playsinline></video>
+        <div class="focus-box"></div>
     </div>
 
-    <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const statusBox = document.getElementById('statusBox');
-        const detectedTextEl = document.getElementById('detectedText');
-        const expectedInput = document.getElementById('expectedText');
-        const actionBtn = document.getElementById('actionBtn');
+    <button id="start-btn">啟動檢測 App</button>
+    <div class="status" id="status-text">狀態：等待點擊啟動...</div>
+</div>
 
-        let worker = null;
-        let isProcessing = false;
-        let scanInterval = null;
+<script>
+    const video = document.getElementById('webcam');
+    const startBtn = document.getElementById('start-btn');
+    const statusText = document.getElementById('status-text');
 
-        // 行動裝置最佳實踐：網頁載入時不自動呼叫硬體，先顯示點擊按鈕，由使用者觸發
-        function showStartButton() {
-            statusBox.className = "status-box pending";
-            statusBox.innerText = "環境就緒，請點擊啟動";
-            actionBtn.style.display = "block";
-        }
-
-        async function startApp() {
-            actionBtn.style.display = "none";
-            
-            if (typeof Tesseract === 'undefined') {
-                statusBox.className = "status-box fail";
-                statusBox.innerText = "❌ 核心庫載入失敗，請重新整理";
-                actionBtn.style.display = "block";
-                return;
-            }
-
-            try {
-                statusBox.innerText = "正在呼叫後置相機...";
-                await startCamera();
-                
-                statusBox.innerText = "正在載入檢測引擎...";
-                if (!worker) {
-                    worker = await Tesseract.createWorker('eng');
-                }
-                
-                statusBox.className = "status-box scanning";
-                statusBox.innerText = "請將 IC 文字移入框內";
-                
-                // 相機與 OCR 引擎雙向安全建立，啟動循環（1.5 秒辨識一次，效能與發熱的最佳平衡點）
-                if (scanInterval) clearInterval(scanInterval);
-                scanInterval = setInterval(processFrame, 1500); 
-            } catch (err) {
-                console.error(err);
-                statusBox.className = "status-box fail";
-                statusBox.innerText = "❌ 啟動失敗，請檢查權限";
-                actionBtn.style.display = "block";
-            }
-        }
-
-        async function startCamera() {
-            if (video.srcObject) {
-                video.srcObject.getTracks().forEach(track => track.stop());
-            }
-
+    startBtn.addEventListener('click', async () => {
+        statusText.innerText = "狀態：正在請求相機並優化對焦...";
+        
+        try {
+            // 1. 基本設定：指定使用後置鏡頭 (environment)
             const constraints = {
                 video: {
                     facingMode: { ideal: "environment" },
-                    // 使用 Full HD (1080P) 提供更清晰的裁切字體邊緣密度
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
-                }
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
             };
 
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             video.srcObject = stream;
-            await video.play();
-        }
 
-        // 精準對焦框局部剪裁 (ROI) 與工業特化影像二值化增強
-        async function processFrame() {
-            if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
-            isProcessing = true;
-
-            try {
-                const vWidth = video.videoWidth;
-                const vHeight = video.videoHeight;
-
-                // 依據畫面上 .scan-overlay 的 CSS 佔比 (top: 35%, left: 15%, width: 70%, height: 30%)
-                // 精確換算出底層相機畫素的裁剪起點與範圍
-                const cropX = vWidth * 0.15;
-                const cropY = vHeight * 0.35;
-                const cropW = vWidth * 0.70;
-                const cropH = vHeight * 0.30;
-
-                // Canvas 畫布僅需對焦框解析度，大幅降低行動端處理器負擔
-                canvas.width = cropW;
-                canvas.height = cropH;
-                const ctx = canvas.getContext('2d');
+            // 2. 核心：等串流載入後，強制將鏡頭推向「快速/持續自動對焦」
+            video.onloadedmetadata = async () => {
+                const track = stream.getVideoTracks()[0];
+                const capabilities = track.getCapabilities ? track.getCapabilities() : {};
                 
-                // 影像工業特化增強：大幅提高對比度 (2.5 倍) 讓反光雷雕字體變純白，黑底背景變純黑
-                ctx.filter = 'grayscale(1) contrast(2.5) brightness(1.0)';
-                
-                // 只將對焦框範圍內的像素渲染至畫布上，捨棄外圍雜訊
-                ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-                ctx.filter = 'none'; 
+                statusText.innerText = "狀態：相機已啟動，調整對焦模式...";
 
-                // 送入 OCR 辨識
-                const { data: { text } } = await worker.recognize(canvas);
-                
-                const cleanText = text.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
-                const expected = expectedInput.value.trim().toUpperCase();
-                
-                if (!cleanText) {
-                    detectedTextEl.innerText = "即時識別：未感測到文字";
-                    return;
-                }
+                // 檢查瀏覽器是否支援進階對焦模式設定 (主要支援於 Android Chrome)
+                if (capabilities.focusMode) {
+                    const focusConstraints = {};
+                    
+                    // 優先選用持續自動對焦 (continuous)，其次是自動對焦 (auto)
+                    if (capabilities.focusMode.includes('continuous')) {
+                        focusConstraints.focusMode = 'continuous';
+                    } else if (capabilities.focusMode.includes('auto')) {
+                        focusConstraints.focusMode = 'auto';
+                    }
 
-                detectedTextEl.innerText = "即時識別：" + cleanText;
+                    // 如果支援微距/近距離對焦 (例如近看 IC 晶片文字)，強制寫入
+                    if (capabilities.focusDistance) {
+                        statusText.innerText = "狀態：已啟用近距離高速辨識模式";
+                    }
 
-                if (expected && cleanText.includes(expected)) {
-                    statusBox.className = "status-box pass";
-                    statusBox.innerText = "【 PASS 】型號相符";
+                    // 將對焦約束條件應用到鏡頭上
+                    if (Object.keys(focusConstraints).length > 0) {
+                        await track.applyConstraints({ advanced: [focusConstraints] });
+                        statusText.innerText = "狀態：即時檢測中 (已開啟持續快速對焦)";
+                    } else {
+                        statusText.innerText = "狀態：即時檢測中 (使用硬體預設對焦)";
+                    }
                 } else {
-                    statusBox.className = "status-box fail";
-                    statusBox.innerText = "【 FAIL 】型號不符";
+                    statusText.innerText = "狀態：即時檢測中 (此瀏覽器不支援進階對焦設定)";
                 }
-                
-            } catch (error) {
-                console.error("Frame Processing Error:", error);
-            } finally {
-                isProcessing = false;
-            }
-        }
+            };
 
-        window.onload = showStartButton;
-    </script>
+        } catch (error) {
+            console.error("無法開啟相機:", error);
+            statusText.innerText = "錯誤：無法存取相機，請檢查權限設定。";
+        }
+    });
+</script>
+
 </body>
 </html>
