@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>中英文字檢測系統</title>
+    <title>RWD 文字比對系統</title>
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
         body { 
@@ -13,47 +13,45 @@
             text-align: center; 
             margin: 0; 
             padding: 10px; 
+            box-sizing: border-box;
         }
         h2 { margin: 10px 0; font-size: 20px; }
-        .input-group { margin: 8px 0; }
+        
+        /* RWD 容器：使用百分比與 max-width 確保在任何尺寸裝置上自適應 */
+        .wrapper {
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+            box-sizing: border-box;
+            padding: 0 10px;
+        }
+
+        .input-group { 
+            margin: 10px 0; 
+            width: 100%; 
+        }
         input[type="text"] { 
-            padding: 10px; 
-            font-size: 16px; 
-            width: 80%; 
-            max-width: 300px; 
-            border-radius: 6px; 
-            border: 1px solid #444; 
+            padding: 12px; 
+            font-size: 18px; 
+            width: 100%; 
+            box-sizing: border-box; 
+            border-radius: 12px; 
+            border: 2px solid #444; 
             background: #222; 
             color: #fff; 
             text-align: center; 
         }
-        /* 後鏡頭切換按鈕樣式 */
-        .switch-btn {
-            background: #333;
-            color: #fff;
-            border: 1px solid #555;
-            padding: 8px 16px;
-            font-size: 14px;
-            font-weight: bold;
-            border-radius: 6px;
-            cursor: pointer;
-            margin: 6px 0;
-            transition: 0.2s;
-        }
-        .switch-btn:active {
-            background: #555;
-        }
         .video-container { 
             position: relative; 
             width: 100%; 
-            max-width: 400px; 
             height: 240px; 
-            margin: 10px auto; 
+            margin: 10px 0; 
             border-radius: 12px;
             overflow: hidden;
             border: 2px solid #444;
             background: #000;
             cursor: pointer;
+            box-sizing: border-box;
         }
         video { 
             width: 100%; 
@@ -80,13 +78,14 @@
             );
         }
         .status-box { 
-            margin: 15px auto; 
+            margin: 15px 0; 
             padding: 16px; 
-            max-width: 400px; 
+            width: 100%;
             font-size: 22px; 
             font-weight: bold; 
             border-radius: 10px; 
             transition: 0.3s; 
+            box-sizing: border-box;
         }
         .pending { background: #ef6c00; color: #fff; }
         .pass { background: #2e7d32; color: #fff; }
@@ -96,27 +95,23 @@
 </head>
 <body>
 
-    <h2>中英文字檢測系統</h2>
-    
-    <div class="input-group">
-        <label>比對文字：</label><br>
-        <input type="text" id="expectedText" value="NE5532P">
-    </div>
+    <div class="wrapper">
+        <h2>RWD 文字比對系統</h2>
+        
+        <div class="input-group">
+            <input type="text" id="expectedText" value="RDW">
+        </div>
 
-    <!-- 後鏡頭循環切換按鈕 -->
-    <div>
-        <button class="switch-btn" onclick="cycleBackCamera()">🔄 切換後置鏡頭 (<span id="camCount">1/1</span>)</button>
-    </div>
+        <div class="video-container" id="videoContainer">
+            <video id="video" autoplay playsinline muted></video>
+            <div class="scan-line"></div>
+        </div>
+        <canvas id="canvas"></canvas>
 
-    <div class="video-container" id="videoContainer">
-        <video id="video" autoplay playsinline muted></video>
-        <div class="scan-line"></div>
+        <div id="statusBox" class="status-box pending">正在載入模型...</div>
+        <p id="detectedText">識別文字：無</p>
+        <p>（請將目標文字對準中央紅線，點擊畫面可手動觸發對焦）</p>
     </div>
-    <canvas id="canvas"></canvas>
-
-    <div id="statusBox" class="status-box pending">正在載入模型...</div>
-    <p id="detectedText">識別文字：無</p>
-    <p>（請將目標文字對準中央紅線，點擊按鈕可切換不同後鏡頭）</p>
 
     <script>
         const video = document.getElementById('video');
@@ -125,92 +120,35 @@
         const expectedInput = document.getElementById('expectedText');
         const videoContainer = document.getElementById('videoContainer');
         const detectedTextEl = document.getElementById('detectedText');
-        const camCountEl = document.getElementById('camCount');
 
         let videoTrack = null;
         let worker = null;
         let isProcessing = false;
-        let currentStream = null;
-
-        let backCameras = [];
-        let currentCamIndex = 0;
 
         async function initOCR() {
             try {
                 statusBox.innerText = "載入中英文字型模型中...";
                 worker = await Tesseract.createWorker(['eng', 'chi_tra']);
-                await worker.setParameters({ tessedit_pageseg_mode: '7' });
 
                 statusBox.className = "status-box pending";
-                statusBox.innerText = "引擎就緒，正在偵測後置鏡頭...";
-                
-                await detectBackCameras();
+                statusBox.innerText = "引擎就緒，請開始比對";
+                startCamera();
             } catch (err) {
                 statusBox.innerText = "引擎載入失敗";
                 console.error(err);
             }
         }
 
-        async function detectBackCameras() {
+        async function startCamera() {
             try {
-                const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                tempStream.getTracks().forEach(track => track.stop());
-
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const videoDevices = devices.filter(device => device.kind === 'videoinput');
-
-                // 過濾出後置鏡頭
-                backCameras = videoDevices.filter(device => {
-                    const label = device.label.toLowerCase();
-                    const isFront = label.includes('front') || label.includes('前') || label.includes('user');
-                    return !isFront;
-                });
-
-                if (backCameras.length === 0) {
-                    backCameras = videoDevices;
-                }
-
-                camCountEl.innerText = `1/${backCameras.length}`;
-                
-                if (backCameras.length > 0) {
-                    await startCamera(backCameras[0].deviceId);
-                } else {
-                    await startCamera(null);
-                }
-            } catch (err) {
-                console.error("無法偵測鏡頭", err);
-                await startCamera(null);
-            }
-        }
-
-        async function startCamera(deviceId) {
-            try {
-                if (currentStream) {
-                    currentStream.getTracks().forEach(track => track.stop());
-                }
-
-                const constraints = {
-                    video: deviceId ? { 
-                        deviceId: { exact: deviceId }, 
-                        width: { ideal: 1280 }, 
-                        height: { ideal: 720 } 
-                    } : { 
-                        facingMode: { exact: "environment" }, 
-                        width: { ideal: 1280 }, 
-                        height: { ideal: 720 } 
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: { exact: "environment" },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
                     }
-                };
+                }).catch(() => navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }));
 
-                let stream;
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia(constraints);
-                } catch (e) {
-                    stream = await navigator.mediaDevices.getUserMedia({
-                        video: deviceId ? { deviceId: deviceId } : { facingMode: "environment" }
-                    });
-                }
-
-                currentStream = stream;
                 video.srcObject = stream;
                 video.play();
                 
@@ -223,30 +161,11 @@
                     }
                 } catch (e) {}
 
-                videoContainer.removeEventListener('click', triggerManualFocus);
                 videoContainer.addEventListener('click', triggerManualFocus);
-
-                if (!window.scanInterval) {
-                    window.scanInterval = setInterval(processFrame, 2000);
-                }
+                setInterval(processFrame, 2000);
             } catch (err) {
                 statusBox.innerText = "相機開啟失敗";
             }
-        }
-
-        async function cycleBackCamera() {
-            if (backCameras.length <= 1) {
-                alert("此裝置目前僅偵測到 1 個後置鏡頭可用");
-                return;
-            }
-
-            currentCamIndex = (currentCamIndex + 1) % backCameras.length;
-            camCountEl.innerText = `${currentCamIndex + 1}/${backCameras.length}`;
-            
-            statusBox.className = "status-box pending";
-            statusBox.innerText = `已切換至後置鏡頭 #${currentCamIndex + 1}`;
-
-            await startCamera(backCameras[currentCamIndex].deviceId);
         }
 
         async function processFrame() {
