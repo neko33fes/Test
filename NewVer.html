@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>中英文字檢測 App (四角定位框版)</title>
+    <title>中英文字檢測 App (嚴格框內掃描版)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -28,17 +28,6 @@
             color: #fff; 
             text-align: center; 
         }
-        .checkbox-group {
-            margin: 8px 0;
-            font-size: 14px;
-            color: #ccc;
-            cursor: pointer;
-        }
-        .checkbox-group input {
-            transform: scale(1.2);
-            margin-right: 6px;
-            cursor: pointer;
-        }
 
         /* 具備響應式適應力的相機預覽框 */
         .video-container { 
@@ -61,43 +50,8 @@
         }
         canvas { display: none; }
         
-        /* 中央基準紅線 */
-        .scan-line {
-            position: absolute;
-            top: 50%;
-            left: 0;
-            right: 0;
-            height: 2px;
-            transform: translateY(-50%);
-            pointer-events: none;
-            z-index: 10;
-            background: repeating-linear-gradient(
-                to right,
-                #ff1744,
-                #ff1744 12px,
-                transparent 12px,
-                transparent 24px
-            );
-        }
-
-        /* 黃色虛線範圍框 (預設隱藏，勾選後顯示)：左右 5%、高度 25% */
-        .capture-box {
-            position: absolute;
-            top: 50%;
-            left: 5%;
-            right: 5%;
-            height: 25%; 
-            transform: translateY(-50%);
-            border: 2px dashed #ffeb3b; 
-            pointer-events: none;
-            z-index: 9;
-            box-sizing: border-box;
-            background-color: rgba(255, 235, 59, 0.05);
-            display: none; 
-        }
-
-        /* 四角定位瞄準框 (常駐顯示，提升科技感與對齊感) */
-        .corner-box {
+        /* 框外遮罩陰影：利用 Box-shadow 讓框外變暗，強烈提示「框外不掃描」 */
+        .scan-mask {
             position: absolute;
             top: 50%;
             left: 5%;
@@ -107,9 +61,21 @@
             pointer-events: none;
             z-index: 8;
             box-sizing: border-box;
-            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6); /* 框外全部加上半透明黑色遮罩 */
         }
-        /* 四個角落的粗邊框樣式 */
+
+        /* 四角定位瞄準框 (綠色直角) */
+        .corner-box {
+            position: absolute;
+            top: 50%;
+            left: 5%;
+            right: 5%;
+            height: 35%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            z-index: 9;
+            box-sizing: border-box;
+        }
         .corner-box::before, .corner-box::after {
             content: '';
             position: absolute;
@@ -142,6 +108,25 @@
             border-width: 0 3px 3px 0;
         }
 
+        /* 中央基準紅線 */
+        .scan-line {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            transform: translateY(-50%);
+            pointer-events: none;
+            z-index: 10;
+            background: repeating-linear-gradient(
+                to right,
+                #ff1744,
+                #ff1744 12px,
+                transparent 12px,
+                transparent 24px
+            );
+        }
+
         /* 狀態看板樣式 */
         .status-box { 
             margin: 15px auto; 
@@ -163,27 +148,20 @@
     <h2>中英文字檢測系統</h2>
     
     <div class="input-group">
-        <label>預期文字：</label><br>
+        <label>比對文字：</label><br>
         <input type="text" id="expectedText" value="NE5532P">
-    </div>
-
-    <!-- 黃框顯示開關 (預設 OFF) -->
-    <div class="checkbox-group">
-        <label>
-            <input type="checkbox" id="showBoxToggle"> 顯示黃色擷取範圍框
-        </label>
     </div>
 
     <!-- 相機與掃描框 -->
     <div class="video-container" id="videoContainer">
         <video id="video" autoplay playsinline muted></video>
+        <!-- 框外遮罩 (讓框外變暗，突顯框內有效區) -->
+        <div class="scan-mask"></div>
         <!-- 四角定位瞄準框 -->
         <div class="corner-box">
             <div class="corner-bottom-left"></div>
             <div class="corner-bottom-right"></div>
         </div>
-        <!-- 黃色擷取範圍框 -->
-        <div class="capture-box" id="captureBox"></div>
         <div class="scan-line"></div>
     </div>
     <canvas id="canvas"></canvas>
@@ -191,7 +169,7 @@
     <!-- 狀態顯示 -->
     <div id="statusBox" class="status-box pending">正在載入中英文字型模型...</div>
     <p id="detectedText">識別文字：無</p>
-    <p>（請將目標文字對準紅線與瞄準框內，點擊畫面可手動觸發對焦）</p>
+    <p>（請將目標文字對準綠色框內，框外區域將不予辨識）</p>
 
     <script>
         const video = document.getElementById('video');
@@ -200,17 +178,10 @@
         const expectedInput = document.getElementById('expectedText');
         const videoContainer = document.getElementById('videoContainer');
         const detectedTextEl = document.getElementById('detectedText');
-        const showBoxToggle = document.getElementById('showBoxToggle');
-        const captureBox = document.getElementById('captureBox');
 
         let videoTrack = null;
         let worker = null;
         let isProcessing = false;
-
-        // 監聽黃框開關切換
-        showBoxToggle.addEventListener('change', (e) => {
-            captureBox.style.display = e.target.checked ? 'block' : 'none';
-        });
 
         // 初始化 Tesseract AI 辨識引擎 (同時載入英文與繁體中文)
         async function initOCR() {
@@ -257,7 +228,7 @@
             }
         }
 
-        // 核心：影像預處理與裁切辨識
+        // 核心：嚴格限定只抓取瞄準框內的影像進行辨識
         async function processFrame() {
             if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
             
@@ -269,11 +240,11 @@
 
                 const containerHeight = videoContainer.clientHeight;
                 
-                // 設定高度比例（此處維持與黃框一致的比例 25%）
-                const heightPercentage = 0.25; 
+                // 與 CSS 瞄準框嚴格對應的比例 (寬度 90% [左右各5%]，高度 35%)
+                const heightPercentage = 0.35; 
                 const uiBoxHeightPx = containerHeight * heightPercentage;
 
-                const boxW = vWidth * 0.9; // 左右各內縮 5% (寬度佔 90%)
+                const boxW = vWidth * 0.9; 
                 const boxH = uiBoxHeightPx * (vHeight / containerHeight);
                 const boxX = (vWidth - boxW) / 2;
                 const boxY = (vHeight - boxH) / 2;
@@ -282,7 +253,7 @@
                 canvas.height = boxH;
                 const ctx = canvas.getContext('2d');
 
-                // 1. 繪製裁切畫面
+                // 1. 嚴格只把瞄準框內的畫面畫進 canvas，框外的畫面會被完全忽略
                 ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, boxW, boxH);
 
                 // 2. 影像前處理：轉為灰階並增強對比
@@ -297,7 +268,7 @@
                 }
                 ctx.putImageData(imgData, 0, 0);
 
-                // 3. 執行辨識
+                // 3. 執行辨識 (僅對框內區域)
                 const { data: { text } } = await worker.recognize(canvas);
                 const cleanText = text.replace(/[\s\r\n]+/g, '').trim();
                 
@@ -309,7 +280,7 @@
 
                 const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim();
                 
-                // 不分大小寫比對：將辨識結果與預期文字皆轉為大寫
+                // 不分大小寫比對
                 const actualUpper = cleanText.toUpperCase();
                 const expectedUpper = expected.toUpperCase();
 
