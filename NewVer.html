@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>中英文字檢測 App (具備 1x/2x 縮放)</title>
+    <title>中英文字檢測 App (中央對焦最佳化版)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -86,7 +86,7 @@
             box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6); 
         }
 
-        /* 四角定位瞄準框 (綠色直角，長度 10px) */
+        /* 四角定位瞄準框 (綠色直角，長度 10px) - 位於畫面絕對中心 */
         .corner-box {
             position: absolute;
             top: 50%;
@@ -130,7 +130,7 @@
             border-width: 0 3px 3px 0;
         }
 
-        /* 中央基準紅線 */
+        /* 中央基準紅線：正中心對焦基準線 */
         .scan-line {
             position: absolute;
             top: 50%;
@@ -185,7 +185,7 @@
         <video id="video" autoplay playsinline muted></video>
         <!-- 框外遮罩 (讓框外變暗，框內有效區進行掃描) -->
         <div class="scan-mask"></div>
-        <!-- 四角定位瞄準框 -->
+        <!-- 四角定位瞄準框 (置中) -->
         <div class="corner-box">
             <div class="corner-bottom-left"></div>
             <div class="corner-bottom-right"></div>
@@ -197,7 +197,7 @@
     <!-- 狀態顯示 -->
     <div id="statusBox" class="status-box pending">正在載入中英文字型模型...</div>
     <p id="detectedText">識別文字：無</p>
-    <p>（請將目標文字對準綠色框內，框外區域將不予辨識）</p>
+    <p>（請將目標文字對準中央綠色框與紅線，點擊畫面可手動觸發對焦）</p>
 
     <script>
         const video = document.getElementById('video');
@@ -214,7 +214,6 @@
         let isProcessing = false;
         let minZoom = 1;
         let maxZoom = 1;
-        let stepZoom = 0.1;
 
         // 初始化 Tesseract AI 辨識引擎 (同時載入英文與繁體中文)
         async function initOCR() {
@@ -253,7 +252,7 @@
 
                 videoContainer.addEventListener('click', () => triggerFastManualFocus());
 
-                // 每 2.5 秒執行一次辨識
+                // 每 2.5 秒執行一次中央區域辨識
                 setInterval(processFrame, 2500);
             } catch (err) {
                 alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS！");
@@ -265,14 +264,10 @@
         async function applyCameraCapabilities(track) {
             try {
                 const capabilities = track.getCapabilities();
-                
-                // 取得相機支援的縮放（Zoom）範圍
                 if (capabilities.zoom) {
                     minZoom = capabilities.zoom.min;
                     maxZoom = capabilities.zoom.max;
                 }
-
-                // 設定自動連續對焦
                 if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
                     await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
                 }
@@ -284,18 +279,15 @@
         // 切換 1x / 2x 縮放倍率
         async function setZoom(level) {
             if (!videoTrack) return;
-            
             try {
                 const capabilities = videoTrack.getCapabilities();
                 let targetZoom = 1;
 
                 if (level === 2) {
-                    // 若相機本身支援硬體縮放，優先使用硬體 zoom
                     if (capabilities.zoom) {
                         targetZoom = Math.min(2, maxZoom);
                         await videoTrack.applyConstraints({ advanced: [{ zoom: targetZoom }] });
                     } else {
-                        // 若不支援硬體縮放，透過 CSS transform 放大預覽畫面模擬 2x
                         video.style.transform = "scale(2)";
                     }
                     btn1x.className = "zoom-btn";
@@ -315,7 +307,7 @@
             }
         }
 
-        // 核心：嚴格限定只抓取瞄準框內的影像進行辨識
+        // 核心：嚴格限定只抓取畫面正中央瞄準框內的影像進行辨識
         async function processFrame() {
             if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
             
@@ -327,35 +319,35 @@
 
                 const containerHeight = videoContainer.clientHeight;
                 
-                // 與 CSS 瞄準框嚴格對應的比例 (寬度 90% [左右各5%]，高度 35%)
+                // 與中央瞄準框嚴格對應的比例 (寬度 90% [左右各5%]，高度 35%)
                 const heightPercentage = 0.35; 
                 const uiBoxHeightPx = containerHeight * heightPercentage;
 
                 const boxW = vWidth * 0.9; 
                 const boxH = uiBoxHeightPx * (vHeight / containerHeight);
                 const boxX = (vWidth - boxW) / 2;
-                const boxY = (vHeight - boxH) / 2;
+                const boxY = (vHeight - boxH) / 2; // 正中央計算
 
                 canvas.width = boxW;   
                 canvas.height = boxH;
                 const ctx = canvas.getContext('2d');
 
-                // 1. 嚴格只把瞄準框內的畫面畫進 canvas，框外的畫面會被完全忽略
+                // 1. 嚴格只把中央瞄準框內的畫面畫進 canvas
                 ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, boxW, boxH);
 
                 // 2. 影像前處理：轉為灰階並增強對比
                 let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 let data = imgData.data;
                 for (let i = 0; i < data.length; i += 4) {
-                    let avg = (data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11); // 轉灰階
+                    let avg = (data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11);
                     let contrasted = avg < 120 ? 0 : 255; 
-                    data[i]     = contrasted; // R
-                    data[i + 1] = contrasted; // G
-                    data[i + 2] = contrasted; // B
+                    data[i]     = contrasted; 
+                    data[i + 1] = contrasted; 
+                    data[i + 2] = contrasted; 
                 }
                 ctx.putImageData(imgData, 0, 0);
 
-                // 3. 執行辨識 (僅對框內區域)
+                // 3. 執行辨識 (僅對中央框內區域)
                 const { data: { text } } = await worker.recognize(canvas);
                 const cleanText = text.replace(/[\s\r\n]+/g, '').trim();
                 
@@ -367,11 +359,10 @@
 
                 const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim();
                 
-                // 不分大小寫比對：將辨識結果與比對文字皆轉為大寫
+                // 不分大小寫比對
                 const actualUpper = cleanText.toUpperCase();
                 const expectedUpper = expected.toUpperCase();
 
-                // 比對結果判定 PASS / FAIL
                 if (expectedUpper && actualUpper.includes(expectedUpper)) {
                     statusBox.className = "status-box pass";
                     statusBox.innerText = "【 PASS 】文字相符";
