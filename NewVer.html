@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IC 即時檢測 App (純紅線對齊版)</title>
+    <title>IC 即時檢測 App (寬間距單紅虛線版)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -50,17 +50,24 @@
         }
         canvas { display: none; }
         
-        /* 正中水平紅線：左右貼邊，線上方無任何文字 */
+        /* 正中水平單紅虛線：貼邊，並使用 background 調整虛線間距（拉開空白間隔） */
         .scan-line {
             position: absolute;
             top: 50%;
             left: 0;
             right: 0;
-            height: 0px;
-            border-top: 2px dashed #ff1744; /* 紅色虛線 */
+            height: 2px;
             transform: translateY(-50%);
             pointer-events: none;
             z-index: 10;
+            /* 透過漸層背景自訂寬虛線：紅線寬 12px，空白間距 12px */
+            background: repeating-linear-gradient(
+                to right,
+                #ff1744,
+                #ff1744 12px,
+                transparent 12px,
+                transparent 24px
+            );
         }
 
         /* 狀態看板樣式 */
@@ -88,7 +95,7 @@
         <input type="text" id="expectedText" value="NE5532P">
     </div>
 
-    <!-- 相機與紅線對齊 -->
+    <!-- 相機與寬間距單紅虛線對齊 -->
     <div class="video-container" id="videoContainer">
         <video id="video" autoplay playsinline muted></video>
         <div class="scan-line"></div>
@@ -98,7 +105,7 @@
     <!-- 狀態顯示 -->
     <div id="statusBox" class="status-box pending">正在載入 AI 辨識引擎...</div>
     <p id="detectedText">識別文字：無</p>
-    <p>（請將 IC 字體對齊紅線，系統將自動背景辨識並顯示 PASS/FAIL）</p>
+    <p>（請將 IC 字體對齊紅色虛線，系統將自動背景辨識並顯示 PASS/FAIL）</p>
 
     <script>
         const video = document.getElementById('video');
