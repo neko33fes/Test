@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>中英文字檢測 App (不分大小寫版)</title>
+    <title>中英文字檢測 App (四角定位框版)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -61,7 +61,7 @@
         }
         canvas { display: none; }
         
-        /* 透過百分比置中對齊的基準紅線 */
+        /* 中央基準紅線 */
         .scan-line {
             position: absolute;
             top: 50%;
@@ -80,20 +80,66 @@
             );
         }
 
-        /* 黃色虛線框 */
+        /* 黃色虛線範圍框 (預設隱藏，勾選後顯示)：左右 5%、高度 25% */
         .capture-box {
             position: absolute;
             top: 50%;
-            left: 10%;
-            right: 10%;
-            height: 50px; 
+            left: 5%;
+            right: 5%;
+            height: 25%; 
             transform: translateY(-50%);
             border: 2px dashed #ffeb3b; 
             pointer-events: none;
             z-index: 9;
             box-sizing: border-box;
             background-color: rgba(255, 235, 59, 0.05);
-            display: none; /* 預設 OFF */
+            display: none; 
+        }
+
+        /* 四角定位瞄準框 (常駐顯示，提升科技感與對齊感) */
+        .corner-box {
+            position: absolute;
+            top: 50%;
+            left: 5%;
+            right: 5%;
+            height: 35%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            z-index: 8;
+            box-sizing: border-box;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        /* 四個角落的粗邊框樣式 */
+        .corner-box::before, .corner-box::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-color: #00e676; /* 亮綠色瞄準框 */
+            border-style: solid;
+        }
+        .corner-box::before {
+            top: 0; left: 0;
+            border-width: 3px 0 0 3px;
+        }
+        .corner-box::after {
+            top: 0; right: 0;
+            border-width: 3px 3px 0 0;
+        }
+        .corner-bottom-left, .corner-bottom-right {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-color: #00e676;
+            border-style: solid;
+        }
+        .corner-bottom-left {
+            bottom: 0; left: 0;
+            border-width: 0 0 3px 3px;
+        }
+        .corner-bottom-right {
+            bottom: 0; right: 0;
+            border-width: 0 3px 3px 0;
         }
 
         /* 狀態看板樣式 */
@@ -131,6 +177,12 @@
     <!-- 相機與掃描框 -->
     <div class="video-container" id="videoContainer">
         <video id="video" autoplay playsinline muted></video>
+        <!-- 四角定位瞄準框 -->
+        <div class="corner-box">
+            <div class="corner-bottom-left"></div>
+            <div class="corner-bottom-right"></div>
+        </div>
+        <!-- 黃色擷取範圍框 -->
         <div class="capture-box" id="captureBox"></div>
         <div class="scan-line"></div>
     </div>
@@ -139,7 +191,7 @@
     <!-- 狀態顯示 -->
     <div id="statusBox" class="status-box pending">正在載入中英文字型模型...</div>
     <p id="detectedText">識別文字：無</p>
-    <p>（請將目標文字對準紅線，點擊畫面可手動觸發對焦）</p>
+    <p>（請將目標文字對準紅線與瞄準框內，點擊畫面可手動觸發對焦）</p>
 
     <script>
         const video = document.getElementById('video');
@@ -215,10 +267,13 @@
                 const vWidth = video.videoWidth;   
                 const vHeight = video.videoHeight; 
 
-                const uiBoxHeightPx = 50; 
                 const containerHeight = videoContainer.clientHeight;
+                
+                // 設定高度比例（此處維持與黃框一致的比例 25%）
+                const heightPercentage = 0.25; 
+                const uiBoxHeightPx = containerHeight * heightPercentage;
 
-                const boxW = vWidth * 0.8; // 左右各內縮 10%
+                const boxW = vWidth * 0.9; // 左右各內縮 5% (寬度佔 90%)
                 const boxH = uiBoxHeightPx * (vHeight / containerHeight);
                 const boxX = (vWidth - boxW) / 2;
                 const boxY = (vHeight - boxH) / 2;
