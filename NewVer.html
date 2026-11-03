@@ -12,22 +12,24 @@
             color: #fff; 
             text-align: center; 
             margin: 0; 
-            padding: 10px; 
+            padding: 20px 10px; 
             box-sizing: border-box;
         }
-        h2 { margin: 10px 0; font-size: 20px; }
+        h2 { margin: 0 0 15px 0; font-size: 20px; }
         
-        /* RWD 容器：使用百分比與 max-width 確保在任何尺寸裝置上自適應 */
+        /* RWD 核心容器：自動適應螢幕寬度並置中 */
         .wrapper {
             width: 100%;
             max-width: 400px;
             margin: 0 auto;
             box-sizing: border-box;
-            padding: 0 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         .input-group { 
-            margin: 10px 0; 
+            margin: 0 0 15px 0; 
             width: 100%; 
         }
         input[type="text"] { 
@@ -41,11 +43,16 @@
             color: #fff; 
             text-align: center; 
         }
+        input[type="text"]::placeholder {
+            color: #777;
+        }
+
+        /* 響應式相機預覽框 */
         .video-container { 
             position: relative; 
             width: 100%; 
-            height: 240px; 
-            margin: 10px 0; 
+            height: 320px; 
+            margin: 0 0 15px 0; 
             border-radius: 12px;
             overflow: hidden;
             border: 2px solid #444;
@@ -78,7 +85,7 @@
             );
         }
         .status-box { 
-            margin: 15px 0; 
+            margin: 0 0 15px 0; 
             padding: 16px; 
             width: 100%;
             font-size: 22px; 
@@ -90,7 +97,7 @@
         .pending { background: #ef6c00; color: #fff; }
         .pass { background: #2e7d32; color: #fff; }
         .fail { background: #c62828; color: #fff; }
-        p { font-size: 13px; color: #aaa; margin: 6px 0; }
+        p { font-size: 13px; color: #aaa; margin: 0 0 8px 0; }
     </style>
 </head>
 <body>
@@ -99,7 +106,7 @@
         <h2>RWD 文字比對系統</h2>
         
         <div class="input-group">
-            <input type="text" id="expectedText" value="RDW">
+            <input type="text" id="expectedText" placeholder="請輸入確認文字" value="">
         </div>
 
         <div class="video-container" id="videoContainer">
@@ -131,7 +138,7 @@
                 worker = await Tesseract.createWorker(['eng', 'chi_tra']);
 
                 statusBox.className = "status-box pending";
-                statusBox.innerText = "引擎就緒，請開始比對";
+                statusBox.innerText = "引擎就緒，請輸入確認文字";
                 startCamera();
             } catch (err) {
                 statusBox.innerText = "引擎載入失敗";
@@ -170,6 +177,15 @@
 
         async function processFrame() {
             if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            
+            const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim().toUpperCase();
+            if (!expected) {
+                statusBox.className = "status-box pending";
+                statusBox.innerText = "請於上方輸入確認文字";
+                detectedTextEl.innerText = "識別文字：等待輸入...";
+                return;
+            }
+
             isProcessing = true;
 
             try {
@@ -202,10 +218,9 @@
                 
                 detectedTextEl.innerText = cleanText ? "識別文字：" + cleanText : "識別文字：(尋找中...)";
 
-                const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim().toUpperCase();
                 const actual = cleanText.toUpperCase();
 
-                if (expected && actual.includes(expected)) {
+                if (actual.includes(expected)) {
                     statusBox.className = "status-box pass";
                     statusBox.innerText = "【 PASS 】文字相符";
                 } else {
