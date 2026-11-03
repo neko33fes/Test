@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IC 即時自動檢測 App (框線比例一致版)</title>
+    <title>IC 即時自動檢測 App (極速對焦精簡版)</title>
     <!-- 引入 Tesseract.js -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -29,7 +29,7 @@
             text-align: center; 
         }
 
-        /* 長形相機預覽框 */
+        /* 等比例協調的相機預覽框 */
         .video-container { 
             position: relative; 
             width: 100%; 
@@ -50,21 +50,22 @@
         }
         canvas { display: none; }
         
-        /* 綠色取景對齊框 (寬 85%, 高 60px) */
+        /* 綠色取景對齊框 (等比例搭配相機預覽) */
         .scan-box {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 85%;   
-            height: 60px; 
+            width: 80%;   
+            height: 55px; 
             border: 2px dashed #00e676;
             box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
             pointer-events: none;
             border-radius: 6px;
+            box-sizing: border-box;
         }
         .scan-box::after {
-            content: "請將 IC 刻字置於框內 (點擊畫面瞬間對焦)";
+            content: "請將 IC 刻字置於綠框內 (點擊畫面可加速對焦)";
             position: absolute;
             bottom: -24px;
             left: 0;
@@ -73,23 +74,6 @@
             color: #00e676;
             text-align: center;
             white-space: nowrap;
-        }
-
-        /* 點擊畫面時的黃色對焦框特效（尺寸比例與綠框完全一致） */
-        .focus-ring {
-            position: absolute;
-            width: 85%;   /* 與綠框寬度一致 */
-            height: 60px; /* 與綠框高度一致 */
-            border: 2px solid #ffeb3b;
-            border-radius: 6px;
-            transform: translate(-50%, -50%) scale(1.05);
-            pointer-events: none;
-            opacity: 0;
-            transition: transform 0.15s, opacity 0.15s;
-        }
-        .focus-ring.active {
-            transform: translate(-50%, -50%) scale(1);
-            opacity: 1;
         }
 
         .status-box { 
@@ -120,14 +104,13 @@
     <div class="video-container" id="videoContainer">
         <video id="video" autoplay playsinline muted></video>
         <div class="scan-box"></div>
-        <div id="focusRing" class="focus-ring"></div>
     </div>
     <canvas id="canvas"></canvas>
 
     <!-- 狀態顯示 -->
     <div id="statusBox" class="status-box pending">載入辨識引擎中...</div>
     <p id="detectedText">即時識別文字：無</p>
-    <p>（請將 IC 靠近鏡頭對準框內，若未對焦請點擊畫面加速對焦）</p>
+    <p>（請將 IC 靠近鏡頭對準綠框內，若模糊請點擊畫面任一處加速對焦）</p>
 
     <script>
         const video = document.getElementById('video');
@@ -136,7 +119,6 @@
         const detectedTextEl = document.getElementById('detectedText');
         const expectedInput = document.getElementById('expectedText');
         const videoContainer = document.getElementById('videoContainer');
-        const focusRing = document.getElementById('focusRing');
 
         let worker = null;
         let isProcessing = false;
@@ -159,7 +141,7 @@
             }
         }
 
-        // 啟動相機並加入對焦加速與微距設定
+        // 啟動相機並加入自動快速對焦與微距設定
         async function startCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
@@ -177,10 +159,12 @@
                 video.play();
                 
                 videoTrack = stream.getVideoTracks()[0];
-                
                 await applyFastFocusSettings(videoTrack);
-                videoContainer.addEventListener('click', (e) => triggerFastManualFocus(e));
 
+                // 點擊畫面任意處立即觸發硬體極速對焦
+                videoContainer.addEventListener('click', () => triggerFastManualFocus());
+
+                // 背景辨識循環 (每 1.5 秒執行一次)
                 setInterval(processFrame, 1500); 
             } catch (err) {
                 alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS/Localhost！");
@@ -188,6 +172,7 @@
             }
         }
 
+        // 套用對焦加速設定
         async function applyFastFocusSettings(track) {
             try {
                 const capabilities = track.getCapabilities();
@@ -213,15 +198,9 @@
             }
         }
 
-        // 點擊畫面時，黃框會直接在畫面正中央（與綠框同位置）閃爍提示對焦
-        async function triggerFastManualFocus(e) {
+        // 點擊畫面強制執行單次極速對焦
+        async function triggerFastManualFocus() {
             if (!videoTrack) return;
-
-            focusRing.classList.add('active');
-            setTimeout(() => {
-                focusRing.classList.remove('active');
-            }, 300);
-
             try {
                 const capabilities = videoTrack.getCapabilities();
                 if (capabilities.focusMode && capabilities.focusMode.includes('single-shot')) {
@@ -235,7 +214,7 @@
             }
         }
 
-        // 截取扁平長條框區域並進行影像前處理
+        // 截取對應綠框等比例區域並進行影像前處理
         function captureAndPreprocess() {
             const ctx = canvas.getContext('2d');
             const vWidth = video.videoWidth;
@@ -243,8 +222,8 @@
 
             if (!vWidth || !vHeight) return false;
 
-            const boxWidth = vWidth * 0.85;
-            const boxHeight = 60; 
+            const boxWidth = vWidth * 0.80;
+            const boxHeight = 55; 
             const boxX = (vWidth - boxWidth) / 2;
             const boxY = (vHeight - boxHeight) / 2;
 
