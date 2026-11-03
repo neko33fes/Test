@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>中英文字檢測 App (防多鏡頭干擾版)</title>
+    <title>中英文字檢測 App (自選鏡頭版)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -17,7 +17,7 @@
         }
         h2 { margin: 10px 0; font-size: 20px; }
         .input-group { margin: 8px 0; }
-        input[type="text"] { 
+        input[type="text"], select { 
             padding: 10px; 
             font-size: 16px; 
             width: 80%; 
@@ -27,6 +27,9 @@
             background: #222; 
             color: #fff; 
             text-align: center; 
+        }
+        select {
+            text-align-last: center;
         }
 
         /* 全景相機預覽框 */
@@ -94,6 +97,14 @@
         <input type="text" id="expectedText" value="NE5532P">
     </div>
 
+    <!-- 鏡頭自選手動下拉選單 -->
+    <div class="input-group">
+        <label>選擇相機鏡頭：</label><br>
+        <select id="cameraSelect" onchange="switchCamera()">
+            <option value="">載入可用鏡頭中...</option>
+        </select>
+    </div>
+
     <!-- 全景相機與紅線 -->
     <div class="video-container" id="videoContainer">
         <video id="video" autoplay playsinline muted></video>
@@ -113,10 +124,12 @@
         const expectedInput = document.getElementById('expectedText');
         const videoContainer = document.getElementById('videoContainer');
         const detectedTextEl = document.getElementById('detectedText');
+        const cameraSelect = document.getElementById('cameraSelect');
 
         let videoTrack = null;
         let worker = null;
         let isProcessing = false;
+        let currentStream = null;
 
         // 初始化 Tesseract AI 辨識引擎
         async function initOCR() {
@@ -129,53 +142,96 @@
                 });
 
                 statusBox.className = "status-box pending";
-                statusBox.innerText = "引擎就緒，請開始中英文檢測";
-                startCamera();
+                statusBox.innerText = "引擎就緒，正在取得相機清單...";
+                
+                // 先取得相機權限，才能完整列出手機上的所有鏡頭
+                await getCameraList();
             } catch (err) {
                 statusBox.innerText = "辨識引擎載入失敗";
                 console.error(err);
             }
         }
 
-        // 啟動手機相機 (優化多鏡頭選擇邏輯)
-        async function startCamera() {
+        // 取得手機上所有可用的相機鏡頭並填入下拉選單
+        async function getCameraList() {
             try {
-                // 優先嘗試指定後置主鏡頭 (Environment)，並限制理想解像度
-                const constraints = {
-                    video: { 
-                        facingMode: { exact: "environment" }, // 強制後鏡頭
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    }
-                };
+                // 先請求一次相機權限以解鎖裝置名稱
+                const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                tempStream.getTracks().forEach(track => track.stop()); // 關閉暫時串流
 
-                let stream;
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia(constraints);
-                } catch (e) {
-                    // 若 exact 失敗（部分 Android 瀏覽器較嚴格），退回彈性指定
-                    stream = await navigator.mediaDevices.getUserMedia({
-                        video: { 
-                            facingMode: "environment",
-                            width: { ideal: 1280 },
-                            height: { ideal: 720 }
-                        }
-                    });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+                cameraSelect.innerHTML = "";
+                
+                if (videoDevices.length === 0) {
+                    cameraSelect.innerHTML = '<option value="">找不到可用相機</option>';
+                    return;
                 }
 
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    // 若無名稱則給預設編號
+                    option.text = device.label || `相機鏡頭 ${index + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+
+                // 自動啟動選單中的第一個鏡頭（優先找後置鏡頭）
+                let selectedId = videoDevices[0].deviceId;
+                for (let d of videoDevices) {
+                    if (d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment') || d.label.toLowerCase().includes('後')) {
+                        selectedId = d.deviceId;
+                        cameraSelect.value = selectedId;
+                        break;
+                    }
+                }
+
+                startCamera(selectedId);
+            } catch (err) {
+                console.error("無法列出相機裝置", err);
+                // 若權限被擋或不支援，直接用預設後鏡頭啟動
+                startCamera(null);
+            }
+        }
+
+        // 啟動指定 DeviceId 的相機
+        async function startCamera(deviceId) {
+            try {
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+
+                const constraints = {
+                    video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } : { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = stream;
                 video.srcObject = stream;
                 video.play();
                 
                 videoTrack = stream.getVideoTracks()[0];
                 await applyCameraCapabilities(videoTrack);
 
+                videoContainer.removeEventListener('click', triggerFastManualFocus);
                 videoContainer.addEventListener('click', () => triggerFastManualFocus());
 
-                // 每 2 秒執行一次辨識
-                setInterval(processFrame, 2000);
+                // 啟動背景辨識定時器（確保不會重複建立 setInterval）
+                if (!window.scanInterval) {
+                    window.scanInterval = setInterval(processFrame, 2000);
+                }
             } catch (err) {
-                alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS！");
+                alert("無法開啟選定的相機，請檢查瀏覽器權限！");
                 statusBox.innerText = "相機開啟失敗";
+            }
+        }
+
+        // 當下拉選單切換時觸發
+        function switchCamera() {
+            const selectedId = cameraSelect.value;
+            if (selectedId) {
+                startCamera(selectedId);
             }
         }
 
@@ -183,8 +239,6 @@
         async function applyCameraCapabilities(track) {
             try {
                 const capabilities = track.getCapabilities();
-                
-                // 如果支援對焦模式，強制設定為連續自動對焦 (continuous)
                 if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
                     await track.applyConstraints({ 
                         advanced: [{ focusMode: 'continuous' }] 
