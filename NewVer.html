@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>中英文字檢測 App (嚴格框內掃描版)</title>
+    <title>中英文字檢測 App (具備 1x/2x 縮放)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -27,6 +27,28 @@
             background: #222; 
             color: #fff; 
             text-align: center; 
+        }
+
+        /* 1x / 2x 切換按鈕群組 */
+        .zoom-group {
+            margin: 8px 0;
+        }
+        .zoom-btn {
+            background: #222;
+            color: #aaa;
+            border: 1px solid #444;
+            padding: 6px 16px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 4px;
+            transition: 0.2s;
+        }
+        .zoom-btn.active {
+            background: #00e676;
+            color: #121212;
+            border-color: #00e676;
         }
 
         /* 具備響應式適應力的相機預覽框 */
@@ -61,10 +83,10 @@
             pointer-events: none;
             z-index: 8;
             box-sizing: border-box;
-            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6); /* 框外全部加上半透明黑色遮罩 */
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6); 
         }
 
-        /* 四角定位瞄準框 (綠色直角) */
+        /* 四角定位瞄準框 (綠色直角，長度 10px) */
         .corner-box {
             position: absolute;
             top: 50%;
@@ -79,8 +101,8 @@
         .corner-box::before, .corner-box::after {
             content: '';
             position: absolute;
-            width: 20px;
-            height: 20px;
+            width: 10px; 
+            height: 10px; 
             border-color: #00e676; /* 亮綠色瞄準框 */
             border-style: solid;
         }
@@ -94,8 +116,8 @@
         }
         .corner-bottom-left, .corner-bottom-right {
             position: absolute;
-            width: 20px;
-            height: 20px;
+            width: 10px; 
+            height: 10px; 
             border-color: #00e676;
             border-style: solid;
         }
@@ -152,10 +174,16 @@
         <input type="text" id="expectedText" value="NE5532P">
     </div>
 
+    <!-- 1x / 2x 縮放開關 -->
+    <div class="zoom-group">
+        <button id="btn1x" class="zoom-btn active" onclick="setZoom(1)">1x</button>
+        <button id="btn2x" class="zoom-btn" onclick="setZoom(2)">2x</button>
+    </div>
+
     <!-- 相機與掃描框 -->
     <div class="video-container" id="videoContainer">
         <video id="video" autoplay playsinline muted></video>
-        <!-- 框外遮罩 (讓框外變暗，突顯框內有效區) -->
+        <!-- 框外遮罩 (讓框外變暗，框內有效區進行掃描) -->
         <div class="scan-mask"></div>
         <!-- 四角定位瞄準框 -->
         <div class="corner-box">
@@ -178,10 +206,15 @@
         const expectedInput = document.getElementById('expectedText');
         const videoContainer = document.getElementById('videoContainer');
         const detectedTextEl = document.getElementById('detectedText');
+        const btn1x = document.getElementById('btn1x');
+        const btn2x = document.getElementById('btn2x');
 
         let videoTrack = null;
         let worker = null;
         let isProcessing = false;
+        let minZoom = 1;
+        let maxZoom = 1;
+        let stepZoom = 0.1;
 
         // 初始化 Tesseract AI 辨識引擎 (同時載入英文與繁體中文)
         async function initOCR() {
@@ -216,7 +249,7 @@
                 video.play();
                 
                 videoTrack = stream.getVideoTracks()[0];
-                await applyFastFocusSettings(videoTrack);
+                await applyCameraCapabilities(videoTrack);
 
                 videoContainer.addEventListener('click', () => triggerFastManualFocus());
 
@@ -225,6 +258,60 @@
             } catch (err) {
                 alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS！");
                 statusBox.innerText = "相機開啟失敗";
+            }
+        }
+
+        // 讀取相機支援的縮放範圍與對焦設定
+        async function applyCameraCapabilities(track) {
+            try {
+                const capabilities = track.getCapabilities();
+                
+                // 取得相機支援的縮放（Zoom）範圍
+                if (capabilities.zoom) {
+                    minZoom = capabilities.zoom.min;
+                    maxZoom = capabilities.zoom.max;
+                }
+
+                // 設定自動連續對焦
+                if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+                    await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                }
+            } catch (err) {
+                console.log("相機進階功能受限", err);
+            }
+        }
+
+        // 切換 1x / 2x 縮放倍率
+        async function setZoom(level) {
+            if (!videoTrack) return;
+            
+            try {
+                const capabilities = videoTrack.getCapabilities();
+                let targetZoom = 1;
+
+                if (level === 2) {
+                    // 若相機本身支援硬體縮放，優先使用硬體 zoom
+                    if (capabilities.zoom) {
+                        targetZoom = Math.min(2, maxZoom);
+                        await videoTrack.applyConstraints({ advanced: [{ zoom: targetZoom }] });
+                    } else {
+                        // 若不支援硬體縮放，透過 CSS transform 放大預覽畫面模擬 2x
+                        video.style.transform = "scale(2)";
+                    }
+                    btn1x.className = "zoom-btn";
+                    btn2x.className = "zoom-btn active";
+                } else {
+                    if (capabilities.zoom) {
+                        targetZoom = minZoom;
+                        await videoTrack.applyConstraints({ advanced: [{ zoom: targetZoom }] });
+                    } else {
+                        video.style.transform = "scale(1)";
+                    }
+                    btn1x.className = "zoom-btn active";
+                    btn2x.className = "zoom-btn";
+                }
+            } catch (err) {
+                console.log("縮放設定失敗", err);
             }
         }
 
@@ -280,7 +367,7 @@
 
                 const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim();
                 
-                // 不分大小寫比對
+                // 不分大小寫比對：將辨識結果與比對文字皆轉為大寫
                 const actualUpper = cleanText.toUpperCase();
                 const expectedUpper = expected.toUpperCase();
 
@@ -296,18 +383,6 @@
                 console.error(error);
             } finally {
                 isProcessing = false;
-            }
-        }
-
-        // 相機自動對焦設定
-        async function applyFastFocusSettings(track) {
-            try {
-                const capabilities = track.getCapabilities();
-                if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
-                    await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-                }
-            } catch (err) {
-                console.log("不支援進階對焦", err);
             }
         }
 
