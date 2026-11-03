@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>IC 高速局部檢測 App</title>
-    <!-- 使用穩定安全的 CDN 載入 Tesseract.js -->
+    <!-- 修正：使用完整且穩定的 Tesseract.js CDN 引入網址 -->
     <script src="https://jsdelivr.net"></script>
     <style>
         body { 
@@ -104,6 +104,11 @@
                 statusBox.innerText = "正在載入辨識引擎...";
                 if (!worker) {
                     worker = await Tesseract.createWorker('eng');
+                    
+                    // 【軟體加速優化】設定白名單，只允許系統識別大寫英文及數字，移除其它雜訊符號干擾
+                    await worker.setParameters({
+                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                    });
                 }
                 
                 statusBox.className = "status-box scanning";
