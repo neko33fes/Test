@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IC 即時檢測 App (寬間距單紅虛線版)</title>
+    <title>IC 即時檢測 App (中英雙語辨識版)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -50,7 +50,7 @@
         }
         canvas { display: none; }
         
-        /* 正中水平單紅虛線：貼邊，並使用 background 調整虛線間距（拉開空白間隔） */
+        /* 正中水平單紅虛線：貼邊，寬間距 */
         .scan-line {
             position: absolute;
             top: 50%;
@@ -60,7 +60,6 @@
             transform: translateY(-50%);
             pointer-events: none;
             z-index: 10;
-            /* 透過漸層背景自訂寬虛線：紅線寬 12px，空白間距 12px */
             background: repeating-linear-gradient(
                 to right,
                 #ff1744,
@@ -88,10 +87,10 @@
 </head>
 <body>
 
-    <h2>IC 即時檢測系統</h2>
+    <h2>IC 即時檢測系統 (中英雙語)</h2>
     
     <div class="input-group">
-        <label>預期型號：</label><br>
+        <label>預期型號/文字：</label><br>
         <input type="text" id="expectedText" value="NE5532P">
     </div>
 
@@ -103,9 +102,9 @@
     <canvas id="canvas"></canvas>
 
     <!-- 狀態顯示 -->
-    <div id="statusBox" class="status-box pending">正在載入 AI 辨識引擎...</div>
+    <div id="statusBox" class="status-box pending">正在載入中英文字型模型...</div>
     <p id="detectedText">識別文字：無</p>
-    <p>（請將 IC 字體對齊紅色虛線，系統將自動背景辨識並顯示 PASS/FAIL）</p>
+    <p>（請將 IC 中英文字體對齊紅色虛線，系統將自動背景辨識並顯示 PASS/FAIL）</p>
 
     <script>
         const video = document.getElementById('video');
@@ -119,16 +118,18 @@
         let worker = null;
         let isProcessing = false;
 
-        // 初始化 Tesseract AI 辨識引擎
+        // 初始化 Tesseract AI 辨識引擎（同時支援 英文 eng 與 繁體中文 chi_tra）
         async function initOCR() {
             try {
-                statusBox.innerText = "載入辨識模型中 (初次稍候)...";
-                worker = await Tesseract.createWorker('eng');
+                statusBox.innerText = "載入中英文字型模型中 (初次需下載較久，請稍候)...";
+                // 同時載入英文與繁體中文辨識包
+                worker = await Tesseract.createWorker(['eng', 'chi_tra']);
                 statusBox.className = "status-box pending";
                 statusBox.innerText = "引擎就緒，請對準 IC";
                 startCamera();
             } catch (err) {
                 statusBox.innerText = "辨識引擎載入失敗";
+                console.error(err);
             }
         }
 
@@ -155,8 +156,8 @@
                 // 點擊畫面任意處觸發極速手動對焦
                 videoContainer.addEventListener('click', () => triggerFastManualFocus());
 
-                // 每 2 秒自動抓取紅線周圍的影像進行背景辨識
-                setInterval(processFrame, 2000);
+                // 每 2.5 秒自動抓取紅線周圍的影像進行背景辨識（中文辨識運算較重，間距稍微拉長）
+                setInterval(processFrame, 2500);
             } catch (err) {
                 alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS/Localhost！");
                 statusBox.innerText = "相機開啟失敗";
@@ -186,7 +187,8 @@
 
                 // 執行辨識
                 const { data: { text } } = await worker.recognize(canvas);
-                const cleanText = text.replace(/\s+/g, ' ').trim();
+                // 移除空白與換行，方便中文與英文比對
+                const cleanText = text.replace(/[\s\r\n]+/g, '').trim();
                 
                 if (cleanText) {
                     detectedTextEl.innerText = "識別文字：" + cleanText;
@@ -194,15 +196,16 @@
                     detectedTextEl.innerText = "識別文字：(尋找中...)";
                 }
 
-                const expected = expectedInput.value.trim().toUpperCase();
+                const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim().toUpperCase();
+                const actual = cleanText.toUpperCase();
                 
                 // 比對結果判定 PASS / FAIL
-                if (expected && cleanText.toUpperCase().includes(expected)) {
+                if (expected && actual.includes(expected)) {
                     statusBox.className = "status-box pass";
-                    statusBox.innerText = "【 PASS 】型號相符";
+                    statusBox.innerText = "【 PASS 】文字相符";
                 } else {
                     statusBox.className = "status-box fail";
-                    statusBox.innerText = "【 FAIL 】型號不符";
+                    statusBox.innerText = "【 FAIL 】文字不符";
                 }
             } catch (error) {
                 console.error(error);
