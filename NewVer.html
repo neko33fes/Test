@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>中英文字檢測 App (全景簡潔版)</title>
+    <title>中英文字檢測 App (防多鏡頭干擾版)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -29,7 +29,7 @@
             text-align: center; 
         }
 
-        /* 全景相機預覽框 (無遮罩、無多餘外框，保持全視野) */
+        /* 全景相機預覽框 */
         .video-container { 
             position: relative; 
             width: 100%; 
@@ -50,7 +50,7 @@
         }
         canvas { display: none; }
         
-        /* 中央基準紅線：維持對齊參考 */
+        /* 中央基準紅線 */
         .scan-line {
             position: absolute;
             top: 50%;
@@ -118,13 +118,12 @@
         let worker = null;
         let isProcessing = false;
 
-        // 初始化 Tesseract AI 辨識引擎 (同時載入英文與繁體中文)
+        // 初始化 Tesseract AI 辨識引擎
         async function initOCR() {
             try {
                 statusBox.innerText = "載入中英文字型模型中 (初次需下載較大檔案，請稍候)...";
                 worker = await Tesseract.createWorker(['eng', 'chi_tra']);
 
-                // 設定為單行文字模式，確保後台辨識速度流暢
                 await worker.setParameters({
                     tessedit_pageseg_mode: '7', 
                 });
@@ -138,19 +137,31 @@
             }
         }
 
-        // 啟動手機相機
+        // 啟動手機相機 (優化多鏡頭選擇邏輯)
         async function startCamera() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
+                // 優先嘗試指定後置主鏡頭 (Environment)，並限制理想解像度
+                const constraints = {
                     video: { 
-                        facingMode: { exact: "environment" },
+                        facingMode: { exact: "environment" }, // 強制後鏡頭
                         width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        focusMode: "continuous"
+                        height: { ideal: 720 }
                     }
-                }).catch(() => {
-                    return navigator.mediaDevices.getUserMedia({ video: true });
-                });
+                };
+
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia(constraints);
+                } catch (e) {
+                    // 若 exact 失敗（部分 Android 瀏覽器較嚴格），退回彈性指定
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: { 
+                            facingMode: "environment",
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        }
+                    });
+                }
 
                 video.srcObject = stream;
                 video.play();
@@ -160,7 +171,7 @@
 
                 videoContainer.addEventListener('click', () => triggerFastManualFocus());
 
-                // 每 2 秒執行一次背景高速辨識
+                // 每 2 秒執行一次辨識
                 setInterval(processFrame, 2000);
             } catch (err) {
                 alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS！");
@@ -172,15 +183,19 @@
         async function applyCameraCapabilities(track) {
             try {
                 const capabilities = track.getCapabilities();
+                
+                // 如果支援對焦模式，強制設定為連續自動對焦 (continuous)
                 if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
-                    await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                    await track.applyConstraints({ 
+                        advanced: [{ focusMode: 'continuous' }] 
+                    });
                 }
             } catch (err) {
                 console.log("相機進階功能受限", err);
             }
         }
 
-        // 核心：全景畫面顯示，但背景自動擷取中央區域進行高速辨識
+        // 核心：全景畫面顯示，背景自動擷取中央區域進行高速辨識
         async function processFrame() {
             if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
             
@@ -192,7 +207,6 @@
 
                 const containerHeight = videoContainer.clientHeight;
                 
-                // 於背景自動擷取畫面正中央區域（寬 90%、高 35%）進行運算，兼顧全景視野與辨識速度
                 const heightPercentage = 0.35; 
                 const uiBoxHeightPx = containerHeight * heightPercentage;
 
@@ -205,10 +219,8 @@
                 canvas.height = boxH;
                 const ctx = canvas.getContext('2d');
 
-                // 1. 擷取中央區域影像
                 ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, boxW, boxH);
 
-                // 2. 影像前處理：轉為灰階並增強對比
                 let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 let data = imgData.data;
                 for (let i = 0; i < data.length; i += 4) {
@@ -220,7 +232,6 @@
                 }
                 ctx.putImageData(imgData, 0, 0);
 
-                // 3. 執行辨識
                 const { data: { text } } = await worker.recognize(canvas);
                 const cleanText = text.replace(/[\s\r\n]+/g, '').trim();
                 
@@ -231,8 +242,6 @@
                 }
 
                 const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim();
-                
-                // 不分大小寫比對
                 const actualUpper = cleanText.toUpperCase();
                 const expectedUpper = expected.toUpperCase();
 
