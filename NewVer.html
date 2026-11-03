@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IC 即時自動檢測 App (高精度二值化版)</title>
-    <!-- 引入 Tesseract.js -->
+    <title>IC 即時檢測 App (完整優化版)</title>
+    <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
         body { 
@@ -48,6 +48,7 @@
             object-fit: cover; 
             display: block; 
         }
+        canvas { display: none; }
         
         /* 綠色取景對齊框 */
         .scan-box {
@@ -75,25 +76,7 @@
             white-space: nowrap;
         }
 
-        /* 偵錯預覽區：即時顯示目前送進 OCR 的黑白影像，方便檢查是否清晰 */
-        .debug-container {
-            margin: 10px auto;
-            max-width: 300px;
-            background: #222;
-            padding: 6px;
-            border-radius: 6px;
-            border: 1px solid #444;
-        }
-        .debug-container p { margin: 0 0 4px 0; font-size: 12px; color: #888; }
-        canvas { 
-            max-width: 100%; 
-            height: auto; 
-            border-radius: 4px; 
-            border: 1px solid #666;
-            display: block;
-            margin: 0 auto;
-        }
-
+        /* 狀態看板樣式 */
         .status-box { 
             margin: 15px auto; 
             padding: 18px; 
@@ -106,12 +89,12 @@
         .pending { background: #ef6c00; color: #fff; }
         .pass { background: #2e7d32; color: #fff; }
         .fail { background: #c62828; color: #fff; }
-        p { font-size: 14px; color: #aaa; margin: 6px 0; }
+        p { font-size: 13px; color: #aaa; margin: 6px 0; }
     </style>
 </head>
 <body>
 
-    <h2>IC 表面文字即時檢測系統</h2>
+    <h2>IC 即時檢測系統</h2>
     
     <div class="input-group">
         <label>預期型號：</label><br>
@@ -123,49 +106,39 @@
         <video id="video" autoplay playsinline muted></video>
         <div class="scan-box"></div>
     </div>
-
-    <!-- 影像前處理偵錯預覽 (讓您檢查文字是否清晰呈現) -->
-    <div class="debug-container">
-        <p>OCR 辨識即時影像預覽 (需黑底白字或白底黑字)</p>
-        <canvas id="canvas"></canvas>
-    </div>
+    <canvas id="canvas"></canvas>
 
     <!-- 狀態顯示 -->
-    <div id="statusBox" class="status-box pending">載入辨識引擎中...</div>
-    <p id="detectedText">即時識別文字：無</p>
-    <p>（請確認上方預覽窗中的文字是否清晰可見，若模糊請點擊畫面重新對焦）</p>
+    <div id="statusBox" class="status-box pending">正在載入 AI 辨識引擎...</div>
+    <p id="detectedText">框內識別文字：無</p>
+    <p>（請將 IC 靠近綠框，系統將自動背景辨識並顯示 PASS/FAIL）</p>
 
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const statusBox = document.getElementById('statusBox');
-        const detectedTextEl = document.getElementById('detectedText');
         const expectedInput = document.getElementById('expectedText');
         const videoContainer = document.getElementById('videoContainer');
+        const detectedTextEl = document.getElementById('detectedText');
 
+        let videoTrack = null;
         let worker = null;
         let isProcessing = false;
-        let consecutivePassCount = 0; 
-        let videoTrack = null;
 
-        // 初始化 Tesseract Worker
+        // 初始化 Tesseract AI 辨識引擎
         async function initOCR() {
             try {
+                statusBox.innerText = "載入辨識模型中 (初次稍候)...";
                 worker = await Tesseract.createWorker('eng');
-                await worker.setParameters({
-                    // 放寬白名單，支援常見的英數字、連字號與斜線
-                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/.',
-                });
                 statusBox.className = "status-box pending";
-                statusBox.innerText = "引擎就緒，等待對準 IC";
+                statusBox.innerText = "引擎就緒，請對準 IC";
                 startCamera();
             } catch (err) {
-                console.error(err);
-                statusBox.innerText = "OCR 引擎載入失敗";
+                statusBox.innerText = "辨識引擎載入失敗";
             }
         }
 
-        // 啟動相機
+        // 啟動手機相機
         async function startCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
@@ -185,15 +158,68 @@
                 videoTrack = stream.getVideoTracks()[0];
                 await applyFastFocusSettings(videoTrack);
 
+                // 點擊畫面任意處觸發極速手動對焦
                 videoContainer.addEventListener('click', () => triggerFastManualFocus());
 
-                setInterval(processFrame, 1500); 
+                // 每 2 秒自動抓取綠框內的影像進行背景辨識
+                setInterval(processFrame, 2000);
             } catch (err) {
                 alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS/Localhost！");
                 statusBox.innerText = "相機開啟失敗";
             }
         }
 
+        // 核心：精準裁切綠框範圍並辨識
+        async function processFrame() {
+            if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            
+            isProcessing = true;
+
+            try {
+                const vWidth = video.videoWidth;
+                const vHeight = video.videoHeight;
+
+                // 計算綠色對齊框在影片中的實際座標
+                const boxW = vWidth * 0.8;
+                const boxH = 55 * (vHeight / videoContainer.clientHeight);
+                const boxX = (vWidth - boxW) / 2;
+                const boxY = (vHeight - boxH) / 2;
+
+                canvas.width = boxW * 2;
+                canvas.height = boxH * 2;
+                const ctx = canvas.getContext('2d');
+
+                // 僅將綠框內的畫面繪製到 Canvas 並放大 2 倍
+                ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, canvas.width, canvas.height);
+
+                // 執行辨識
+                const { data: { text } } = await worker.recognize(canvas);
+                const cleanText = text.replace(/\s+/g, ' ').trim();
+                
+                if (cleanText) {
+                    detectedTextEl.innerText = "框內識別文字：" + cleanText;
+                } else {
+                    detectedTextEl.innerText = "框內識別文字：(尋找中...)";
+                }
+
+                const expected = expectedInput.value.trim().toUpperCase();
+                
+                // 比對結果判定 PASS / FAIL
+                if (expected && cleanText.toUpperCase().includes(expected)) {
+                    statusBox.className = "status-box pass";
+                    statusBox.innerText = "【 PASS 】型號相符";
+                } else {
+                    statusBox.className = "status-box fail";
+                    statusBox.innerText = "【 FAIL 】型號不符";
+                }
+            } catch (error) {
+                console.error(error);
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        // 相機自動對焦微距設定
         async function applyFastFocusSettings(track) {
             try {
                 const capabilities = track.getCapabilities();
@@ -207,6 +233,10 @@
                     }
                 }
 
+                if (capabilities.exposureCompensation) {
+                    advancedSettings.exposureCompensation = 0; 
+                }
+
                 if (Object.keys(advancedSettings).length > 0) {
                     await track.applyConstraints({ advanced: [advancedSettings] });
                 }
@@ -215,6 +245,7 @@
             }
         }
 
+        // 點擊畫面單次極速對焦
         async function triggerFastManualFocus() {
             if (!videoTrack) return;
             try {
@@ -227,91 +258,6 @@
                 }
             } catch (err) {
                 console.log("手動極速對焦觸發受限", err);
-            }
-        }
-
-        // 高精度影像前處理 (灰階 -> 強化對比 -> 雙向二值化閾值過濾)
-        function captureAndPreprocess() {
-            const ctx = canvas.getContext('2d');
-            const vWidth = video.videoWidth;
-            const vHeight = video.videoHeight;
-
-            if (!vWidth || !vHeight) return false;
-
-            const boxWidth = vWidth * 0.80;
-            const boxHeight = 55; 
-            const boxX = (vWidth - boxWidth) / 2;
-            const boxY = (vHeight - boxHeight) / 2;
-
-            canvas.width = boxWidth;
-            canvas.height = boxHeight;
-
-            ctx.drawImage(video, boxX, boxY, boxWidth, boxHeight, 0, 0, boxWidth, boxHeight);
-
-            let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            let data = imgData.data;
-            
-            // 計算平均亮度以自動適應環境光線
-            let totalBrightness = 0;
-            for (let i = 0; i < data.length; i += 4) {
-                totalBrightness += (data[i] * 0.299 + data[i + 1] + data[i + 2] * 0.114);
-            }
-            let avgBrightness = totalBrightness / (data.length / 4);
-            
-            // 動態調整閾值，把背景雜訊濾掉，強化文字
-            const threshold = avgBrightness * 0.85;
-
-            for (let i = 0; i < data.length; i += 4) {
-                let gray = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-                
-                // 二值化：高於閾值的變白（背景），低於閾值的變黑（文字）
-                let cVal = gray > threshold ? 255 : 0;
-
-                data[i] = cVal;     
-                data[i + 1] = cVal; 
-                data[i + 2] = cVal; 
-            }
-            ctx.putImageData(imgData, 0, 0);
-            return true;
-        }
-
-        async function processFrame() {
-            if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
-            
-            isProcessing = true;
-
-            try {
-                if (!captureAndPreprocess()) {
-                    isProcessing = false;
-                    return;
-                }
-
-                const { data: { text } } = await worker.recognize(canvas);
-                const cleanText = text.replace(/[^A-Z0-9-/.\\s]/g, '').replace(/\s+/g, ' ').trim(); 
-                
-                if (cleanText.length > 0) {
-                    detectedTextEl.innerText = "即時識別文字：" + cleanText;
-                } else {
-                    detectedTextEl.innerText = "即時識別文字：(未偵測到文字)";
-                }
-
-                const expected = expectedInput.value.trim().toUpperCase();
-                
-                if (expected && cleanText.toUpperCase().includes(expected)) {
-                    consecutivePassCount++;
-                    if (consecutivePassCount >= 2) {
-                        statusBox.className = "status-box pass";
-                        statusBox.innerText = "【 PASS 】型號相符";
-                    }
-                } else {
-                    consecutivePassCount = 0; 
-                    statusBox.className = "status-box fail";
-                    statusBox.innerText = "【 FAIL 】型號不符";
-                }
-            } catch (error) {
-                console.error("OCR 錯誤:", error);
-            } finally {
-                isProcessing = false;
             }
         }
 
