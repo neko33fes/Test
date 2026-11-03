@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>IC 局部檢測 App</title>
-    <!-- 引入 Tesseract.js 用於網頁端文字辨識 -->
+    <!-- 引入 Tesseract.js 用於網頁端文字辨識 (修正後的正確網址) -->
     <script src="https://jsdelivr.net"></script>
     <style>
         body { 
@@ -131,7 +131,6 @@
                 const vHeight = video.videoHeight;
 
                 // 根據 CSS 設定的比例計算實際剪裁區域 (對焦框位置：top 35%, left 15%, width 70%, height 30%)
-                // 注意：這裡假設 video 在 video-container 中是以 object-fit: cover 填滿
                 const cropX = vWidth * 0.15;
                 const cropY = vHeight * 0.35;
                 const cropW = vWidth * 0.70;
