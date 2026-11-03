@@ -2,8 +2,8 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IC 即時檢測 App (中英雙語辨識版)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IC 即時檢測 App (具黃框開關版)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -15,11 +15,11 @@
             margin: 0; 
             padding: 10px; 
         }
-        h2 { margin: 10px 0; font-size: 22px; }
+        h2 { margin: 10px 0; font-size: 20px; }
         .input-group { margin: 8px 0; }
-        input { 
+        input[type="text"] { 
             padding: 10px; 
-            font-size: 18px; 
+            font-size: 16px; 
             width: 80%; 
             max-width: 300px; 
             border-radius: 6px; 
@@ -28,8 +28,19 @@
             color: #fff; 
             text-align: center; 
         }
+        .checkbox-group {
+            margin: 8px 0;
+            font-size: 14px;
+            color: #ccc;
+            cursor: pointer;
+        }
+        .checkbox-group input {
+            transform: scale(1.2);
+            margin-right: 6px;
+            cursor: pointer;
+        }
 
-        /* 相機預覽框 */
+        /* 具備響應式適應力的相機預覽框 */
         .video-container { 
             position: relative; 
             width: 100%; 
@@ -50,7 +61,7 @@
         }
         canvas { display: none; }
         
-        /* 正中水平單紅虛線：貼邊，寬間距 */
+        /* 透過百分比置中對齊的基準紅線 */
         .scan-line {
             position: absolute;
             top: 50%;
@@ -69,12 +80,28 @@
             );
         }
 
+        /* 黃色虛線框：預設隱藏 (display: none)，勾選後顯示 */
+        .capture-box {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 40px; /* 掃描帶高度 */
+            transform: translateY(-50%);
+            border: 2px dashed #ffeb3b; /* 黃色虛線 */
+            pointer-events: none;
+            z-index: 9;
+            box-sizing: border-box;
+            background-color: rgba(255, 235, 59, 0.05);
+            display: none; /* 預設 OFF */
+        }
+
         /* 狀態看板樣式 */
         .status-box { 
             margin: 15px auto; 
-            padding: 18px; 
+            padding: 16px; 
             max-width: 400px; 
-            font-size: 24px; 
+            font-size: 22px; 
             font-weight: bold; 
             border-radius: 10px; 
             transition: 0.3s; 
@@ -87,16 +114,24 @@
 </head>
 <body>
 
-    <h2>IC 即時檢測系統 (中英雙語)</h2>
+    <h2>IC 即時檢測系統</h2>
     
     <div class="input-group">
         <label>預期型號/文字：</label><br>
         <input type="text" id="expectedText" value="NE5532P">
     </div>
 
-    <!-- 相機與寬間距單紅虛線對齊 -->
+    <!-- 黃框顯示開關 (預設 OFF) -->
+    <div class="checkbox-group">
+        <label>
+            <input type="checkbox" id="showBoxToggle"> 顯示黃色擷取範圍框
+        </label>
+    </div>
+
+    <!-- 相機與掃描框 -->
     <div class="video-container" id="videoContainer">
         <video id="video" autoplay playsinline muted></video>
+        <div class="capture-box" id="captureBox"></div>
         <div class="scan-line"></div>
     </div>
     <canvas id="canvas"></canvas>
@@ -104,7 +139,7 @@
     <!-- 狀態顯示 -->
     <div id="statusBox" class="status-box pending">正在載入中英文字型模型...</div>
     <p id="detectedText">識別文字：無</p>
-    <p>（請將 IC 中英文字體對齊紅色虛線，系統將自動背景辨識並顯示 PASS/FAIL）</p>
+    <p>（請將 IC 字體對準紅線，系統將自動適應不同手機進行裁切辨識）</p>
 
     <script>
         const video = document.getElementById('video');
@@ -113,16 +148,26 @@
         const expectedInput = document.getElementById('expectedText');
         const videoContainer = document.getElementById('videoContainer');
         const detectedTextEl = document.getElementById('detectedText');
+        const showBoxToggle = document.getElementById('showBoxToggle');
+        const captureBox = document.getElementById('captureBox');
 
         let videoTrack = null;
         let worker = null;
         let isProcessing = false;
 
-        // 初始化 Tesseract AI 辨識引擎（同時支援 英文 eng 與 繁體中文 chi_tra）
+        // 監聽黃框開關切換
+        showBoxToggle.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                captureBox.style.display = 'block';
+            } else {
+                captureBox.style.display = 'none';
+            }
+        });
+
+        // 初始化 Tesseract AI 辨識引擎
         async function initOCR() {
             try {
-                statusBox.innerText = "載入中英文字型模型中 (初次需下載較久，請稍候)...";
-                // 同時載入英文與繁體中文辨識包
+                statusBox.innerText = "載入中英文字型模型中 (初次需下載，請稍候)...";
                 worker = await Tesseract.createWorker(['eng', 'chi_tra']);
                 statusBox.className = "status-box pending";
                 statusBox.innerText = "引擎就緒，請對準 IC";
@@ -153,33 +198,35 @@
                 videoTrack = stream.getVideoTracks()[0];
                 await applyFastFocusSettings(videoTrack);
 
-                // 點擊畫面任意處觸發極速手動對焦
                 videoContainer.addEventListener('click', () => triggerFastManualFocus());
 
-                // 每 2.5 秒自動抓取紅線周圍的影像進行背景辨識（中文辨識運算較重，間距稍微拉長）
+                // 每 2.5 秒自動執行適應性畫面裁切與辨識
                 setInterval(processFrame, 2500);
             } catch (err) {
-                alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS/Localhost！");
+                alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS！");
                 statusBox.innerText = "相機開啟失敗";
             }
         }
 
-        // 核心：精準裁切紅線周圍（全寬、高 40px 的水平橫條）進行辨識
+        // 核心：基於比例的適應性裁剪演算法
         async function processFrame() {
             if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
             
             isProcessing = true;
 
             try {
-                const vWidth = video.videoWidth;
-                const vHeight = video.videoHeight;
+                const vWidth = video.videoWidth;   // 相機感光元件真實寬度
+                const vHeight = video.videoHeight; // 相機感光元件真實高度
 
-                const boxW = vWidth; 
-                const boxH = 40 * (vHeight / videoContainer.clientHeight); 
+                const uiBoxHeightPx = 40; 
+                const containerHeight = videoContainer.clientHeight;
+
+                const boxW = vWidth;
+                const boxH = uiBoxHeightPx * (vHeight / containerHeight);
                 const boxX = 0;
                 const boxY = (vHeight - boxH) / 2;
 
-                canvas.width = boxW * 2;
+                canvas.width = boxW * 2;   
                 canvas.height = boxH * 2;
                 const ctx = canvas.getContext('2d');
 
@@ -187,7 +234,6 @@
 
                 // 執行辨識
                 const { data: { text } } = await worker.recognize(canvas);
-                // 移除空白與換行，方便中文與英文比對
                 const cleanText = text.replace(/[\s\r\n]+/g, '').trim();
                 
                 if (cleanText) {
@@ -214,29 +260,15 @@
             }
         }
 
-        // 相機自動對焦微距設定
+        // 相機自動對焦設定
         async function applyFastFocusSettings(track) {
             try {
                 const capabilities = track.getCapabilities();
-                let advancedSettings = {};
-
-                if (capabilities.focusMode) {
-                    if (capabilities.focusMode.includes('continuous')) {
-                        advancedSettings.focusMode = 'continuous';
-                    } else if (capabilities.focusMode.includes('macro')) {
-                        advancedSettings.focusMode = 'macro';
-                    }
-                }
-
-                if (capabilities.exposureCompensation) {
-                    advancedSettings.exposureCompensation = 0; 
-                }
-
-                if (Object.keys(advancedSettings).length > 0) {
-                    await track.applyConstraints({ advanced: [advancedSettings] });
+                if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+                    await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
                 }
             } catch (err) {
-                console.log("硬體不支援進階對焦約束", err);
+                console.log("不支援進階對焦", err);
             }
         }
 
@@ -252,7 +284,7 @@
                     }, 1000);
                 }
             } catch (err) {
-                console.log("手動極速對焦觸發受限", err);
+                console.log("手動對焦受限", err);
             }
         }
 
