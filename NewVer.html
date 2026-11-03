@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>中英文字檢測 App (多後置鏡頭循環切換)</title>
-    <!-- 引入 Tesseract.js 文字辨識庫 -->
+    <title>中英文字檢測系統</title>
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
         body { 
@@ -28,7 +27,6 @@
             color: #fff; 
             text-align: center; 
         }
-
         /* 後鏡頭切換按鈕樣式 */
         .switch-btn {
             background: #333;
@@ -45,8 +43,6 @@
         .switch-btn:active {
             background: #555;
         }
-
-        /* 全景相機預覽框 */
         .video-container { 
             position: relative; 
             width: 100%; 
@@ -66,8 +62,6 @@
             display: block; 
         }
         canvas { display: none; }
-        
-        /* 中央基準紅線 */
         .scan-line {
             position: absolute;
             top: 50%;
@@ -85,8 +79,6 @@
                 transparent 24px
             );
         }
-
-        /* 狀態看板樣式 */
         .status-box { 
             margin: 15px auto; 
             padding: 16px; 
@@ -111,22 +103,20 @@
         <input type="text" id="expectedText" value="NE5532P">
     </div>
 
-    <!-- 多後置鏡頭循環切換按鈕 -->
+    <!-- 後鏡頭循環切換按鈕 -->
     <div>
         <button class="switch-btn" onclick="cycleBackCamera()">🔄 切換後置鏡頭 (<span id="camCount">1/1</span>)</button>
     </div>
 
-    <!-- 全景相機與紅線 -->
     <div class="video-container" id="videoContainer">
         <video id="video" autoplay playsinline muted></video>
         <div class="scan-line"></div>
     </div>
     <canvas id="canvas"></canvas>
 
-    <!-- 狀態顯示 -->
-    <div id="statusBox" class="status-box pending">正在載入中英文字型模型...</div>
+    <div id="statusBox" class="status-box pending">正在載入模型...</div>
     <p id="detectedText">識別文字：無</p>
-    <p>（請將目標文字對準中央紅線，點擊按鈕可循環切換不同後鏡頭）</p>
+    <p>（請將目標文字對準中央紅線，點擊按鈕可切換不同後鏡頭）</p>
 
     <script>
         const video = document.getElementById('video');
@@ -141,59 +131,51 @@
         let worker = null;
         let isProcessing = false;
         let currentStream = null;
-        
+
         let backCameras = [];
         let currentCamIndex = 0;
 
-        // 初始化 Tesseract AI 辨識引擎
         async function initOCR() {
             try {
-                statusBox.innerText = "載入中英文字型模型中 (初次需下載較大檔案，請稍候)...";
+                statusBox.innerText = "載入中英文字型模型中...";
                 worker = await Tesseract.createWorker(['eng', 'chi_tra']);
-
-                await worker.setParameters({
-                    tessedit_pageseg_mode: '7', 
-                });
+                await worker.setParameters({ tessedit_pageseg_mode: '7' });
 
                 statusBox.className = "status-box pending";
                 statusBox.innerText = "引擎就緒，正在偵測後置鏡頭...";
                 
                 await detectBackCameras();
             } catch (err) {
-                statusBox.innerText = "辨識引擎載入失敗";
+                statusBox.innerText = "引擎載入失敗";
                 console.error(err);
             }
         }
 
-        // 自動掃描並篩選出所有的後置鏡頭
         async function detectBackCameras() {
             try {
-                // 先請求一次相機權限以解鎖裝置名稱
                 const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
                 tempStream.getTracks().forEach(track => track.stop());
 
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
 
-                // 過濾掉前鏡頭，保留後置鏡頭
+                // 過濾出後置鏡頭
                 backCameras = videoDevices.filter(device => {
                     const label = device.label.toLowerCase();
                     const isFront = label.includes('front') || label.includes('前') || label.includes('user');
                     return !isFront;
                 });
 
-                // 如果過濾完剛好為 0（部分瀏覽器不提供 label 名稱），則把全部裝置納入備選
                 if (backCameras.length === 0) {
                     backCameras = videoDevices;
                 }
 
                 camCountEl.innerText = `1/${backCameras.length}`;
                 
-                // 啟動第一個後置鏡頭
                 if (backCameras.length > 0) {
                     await startCamera(backCameras[0].deviceId);
                 } else {
-                    await startCamera(null); // 退回預設
+                    await startCamera(null);
                 }
             } catch (err) {
                 console.error("無法偵測鏡頭", err);
@@ -201,7 +183,6 @@
             }
         }
 
-        // 啟動指定 deviceId 的相機
         async function startCamera(deviceId) {
             try {
                 if (currentStream) {
@@ -224,7 +205,6 @@
                 try {
                     stream = await navigator.mediaDevices.getUserMedia(constraints);
                 } catch (e) {
-                    // 若 exact 失敗，改用彈性指定
                     stream = await navigator.mediaDevices.getUserMedia({
                         video: deviceId ? { deviceId: deviceId } : { facingMode: "environment" }
                     });
@@ -235,21 +215,25 @@
                 video.play();
                 
                 videoTrack = stream.getVideoTracks()[0];
-                await applyCameraCapabilities(videoTrack);
+                
+                try {
+                    const caps = videoTrack.getCapabilities();
+                    if (caps.focusMode && caps.focusMode.includes('continuous')) {
+                        await videoTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                    }
+                } catch (e) {}
 
-                videoContainer.removeEventListener('click', triggerFastManualFocus);
-                videoContainer.addEventListener('click', () => triggerFastManualFocus());
+                videoContainer.removeEventListener('click', triggerManualFocus);
+                videoContainer.addEventListener('click', triggerManualFocus);
 
                 if (!window.scanInterval) {
                     window.scanInterval = setInterval(processFrame, 2000);
                 }
             } catch (err) {
-                alert("無法啟動該後置鏡頭！");
-                statusBox.innerText = "相機啟動失敗";
+                statusBox.innerText = "相機開啟失敗";
             }
         }
 
-        // 循環切換下一個後置鏡頭
         async function cycleBackCamera() {
             if (backCameras.length <= 1) {
                 alert("此裝置目前僅偵測到 1 個後置鏡頭可用");
@@ -265,41 +249,21 @@
             await startCamera(backCameras[currentCamIndex].deviceId);
         }
 
-        // 讀取相機對焦設定
-        async function applyCameraCapabilities(track) {
-            try {
-                const capabilities = track.getCapabilities();
-                if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
-                    await track.applyConstraints({ 
-                        advanced: [{ focusMode: 'continuous' }] 
-                    });
-                }
-            } catch (err) {
-                console.log("相機進階功能受限", err);
-            }
-        }
-
-        // 核心：全景畫面顯示，背景自動擷取中央區域進行高速辨識
         async function processFrame() {
             if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
-            
             isProcessing = true;
 
             try {
-                const vWidth = video.videoWidth;   
-                const vHeight = video.videoHeight; 
-
-                const containerHeight = videoContainer.clientHeight;
+                const vW = video.videoWidth;
+                const vH = video.videoHeight;
+                const cH = videoContainer.clientHeight;
                 
-                const heightPercentage = 0.35; 
-                const uiBoxHeightPx = containerHeight * heightPercentage;
+                const boxW = vW * 0.9;
+                const boxH = (cH * 0.35) * (vH / cH);
+                const boxX = (vW - boxW) / 2;
+                const boxY = (vH - boxH) / 2;
 
-                const boxW = vWidth * 0.9; 
-                const boxH = uiBoxHeightPx * (vHeight / containerHeight);
-                const boxX = (vWidth - boxW) / 2;
-                const boxY = (vHeight - boxH) / 2;
-
-                canvas.width = boxW;   
+                canvas.width = boxW;
                 canvas.height = boxH;
                 const ctx = canvas.getContext('2d');
 
@@ -309,27 +273,20 @@
                 let data = imgData.data;
                 for (let i = 0; i < data.length; i += 4) {
                     let avg = (data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11);
-                    let contrasted = avg < 120 ? 0 : 255; 
-                    data[i]     = contrasted; 
-                    data[i + 1] = contrasted; 
-                    data[i + 2] = contrasted; 
+                    let val = avg < 120 ? 0 : 255;
+                    data[i] = data[i+1] = data[i+2] = val;
                 }
                 ctx.putImageData(imgData, 0, 0);
 
                 const { data: { text } } = await worker.recognize(canvas);
                 const cleanText = text.replace(/[\s\r\n]+/g, '').trim();
                 
-                if (cleanText) {
-                    detectedTextEl.innerText = "識別文字：" + cleanText;
-                } else {
-                    detectedTextEl.innerText = "識別文字：(尋找中...)";
-                }
+                detectedTextEl.innerText = cleanText ? "識別文字：" + cleanText : "識別文字：(尋找中...)";
 
-                const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim();
-                const actualUpper = cleanText.toUpperCase();
-                const expectedUpper = expected.toUpperCase();
+                const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim().toUpperCase();
+                const actual = cleanText.toUpperCase();
 
-                if (expectedUpper && actualUpper.includes(expectedUpper)) {
+                if (expected && actual.includes(expected)) {
                     statusBox.className = "status-box pass";
                     statusBox.innerText = "【 PASS 】文字相符";
                 } else {
@@ -343,20 +300,17 @@
             }
         }
 
-        // 點擊畫面單次極速對焦
-        async function triggerFastManualFocus() {
+        async function triggerManualFocus() {
             if (!videoTrack) return;
             try {
-                const capabilities = videoTrack.getCapabilities();
-                if (capabilities.focusMode && capabilities.focusMode.includes('single-shot')) {
+                const caps = videoTrack.getCapabilities();
+                if (caps.focusMode && caps.focusMode.includes('single-shot')) {
                     await videoTrack.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
                     setTimeout(async () => {
                         await videoTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
                     }, 1000);
                 }
-            } catch (err) {
-                console.log("手動對焦受限", err);
-            }
+            } catch (e) {}
         }
 
         window.onload = initOCR;
