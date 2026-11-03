@@ -3,21 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IC 高速局部檢測 App</title>
-    <!-- 修正：使用完整且穩定的 Tesseract.js CDN 引入網址 -->
+    <title>IC 高速局部檢測 App (相容穩定版)</title>
+    <!-- 使用原本就順利執行的 CDN 連網載入方式 -->
     <script src="https://jsdelivr.net"></script>
     <style>
         body { 
             font-family: sans-serif; background: #111; color: #fff; text-align: center; margin: 0; padding: 10px;
             display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-height: 100vh; box-sizing: border-box;
         }
+        /* 限制全頁最大寬度，避免頁面太大 */
         .app-container { width: 100%; max-width: 360px; margin: 0 auto; }
         h2 { font-size: 20px; margin: 10px 0; color: #00e676; }
         
         .video-container { position: relative; width: 100%; aspect-ratio: 4/3; margin: 10px auto; overflow: hidden; border-radius: 12px; border: 2px solid #444; background: #000; }
         video { width: 100%; height: 100%; object-fit: cover; display: block; }
         
-        /* 縮小對焦框：30% 高度、70% 寬度，符合真實小 IC 晶片的外觀形狀 */
+        /* 縮小對焦框：符合真實小 IC 晶片的外觀形狀 */
         .scan-overlay {
             position: absolute; top: 35%; left: 15%; width: 70%; height: 30%;
             border: 2px solid #00e676; border-radius: 6px; box-sizing: border-box;
@@ -42,6 +43,7 @@
         .info-text { font-size: 13px; color: #aaa; margin: 8px 0; line-height: 1.4; }
         #detectedText { font-size: 15px; color: #fff; font-weight: bold; background: #222; padding: 8px; border-radius: 6px; border-left: 4px solid #29b6f6; text-align: left; word-break: break-all; }
         
+        /* 啟動按鈕，防止瀏覽器安全攔截 */
         .btn-action { display: none; margin-top: 10px; padding: 12px 24px; font-size: 16px; background: #00e676; color: #000; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; }
     </style>
 </head>
@@ -66,7 +68,7 @@
         <button id="actionBtn" class="btn-action" onclick="startApp()">啟動高速檢測</button>
         
         <p id="detectedText">即時識別：無</p>
-        <p class="info-text">💡 提示：本版本已開啟硬體連續追蹤對焦模式。若畫面模糊，可稍微拿遠再慢慢靠近。</p>
+        <p class="info-text">💡 提示：請將晶片拉近，讓字體填滿綠色框以獲得最佳辨識率。</p>
     </div>
 
     <script>
@@ -81,6 +83,7 @@
         let isProcessing = false;
         let scanInterval = null;
 
+        // 初始化：由使用者點擊按鈕觸發
         function showStartButton() {
             statusBox.className = "status-box pending";
             statusBox.innerText = "環境就緒，請點擊啟動";
@@ -92,7 +95,7 @@
             
             if (typeof Tesseract === 'undefined') {
                 statusBox.className = "status-box fail";
-                statusBox.innerText = "❌ 核心庫載入失敗，請重新整理";
+                statusBox.innerText = "❌ 核心庫載入失敗，請檢查網路";
                 actionBtn.style.display = "block";
                 return;
             }
@@ -103,9 +106,10 @@
                 
                 statusBox.innerText = "正在載入辨識引擎...";
                 if (!worker) {
+                    // 使用舊版原本能動的預設網路載入機制
                     worker = await Tesseract.createWorker('eng');
                     
-                    // 【軟體加速優化】設定白名單，只允許系統識別大寫英文及數字，移除其它雜訊符號干擾
+                    // 白名單限制：只識別大寫英數字，避開符號，提升對焦與反應速度
                     await worker.setParameters({
                         tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
                     });
@@ -114,13 +118,13 @@
                 statusBox.className = "status-box scanning";
                 statusBox.innerText = "請將 IC 文字移入框內";
                 
-                // 相機與引擎均就緒，啟動高頻率辨識循環 (調整為 800ms 一次，反應速度極快)
+                // 啟動高頻率辨識循環 (調整為 800ms 一次，反應極速)
                 if (scanInterval) clearInterval(scanInterval);
                 scanInterval = setInterval(processFrame, 800); 
             } catch (err) {
                 console.error(err);
                 statusBox.className = "status-box fail";
-                statusBox.innerText = "❌ 啟動失敗，請檢查權限";
+                statusBox.innerText = "❌ 啟動失敗，請檢查 HTTPS 或相機權限";
                 actionBtn.style.display = "block";
             }
         }
@@ -133,7 +137,6 @@
             const constraints = {
                 video: {
                     facingMode: { ideal: "environment" },
-                    // 使用 Full HD 確保近距離剪裁字體時邊緣不失真
                     width: { ideal: 1920 },
                     height: { ideal: 1080 }
                 }
@@ -143,25 +146,21 @@
             video.srcObject = stream;
             await video.play();
 
-            // 【關鍵硬體優化】強制要求手機硬體相機開啟「連續自動對焦」模式
+            // 連續自動對焦優化
             try {
                 const track = stream.getVideoTracks()[0];
                 const capabilities = track.getCapabilities();
-                
-                // 檢查該手機的後置鏡頭是否支援對焦模式設定
                 if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
                     await track.applyConstraints({
                         advanced: [{ focusMode: 'continuous' }]
                     });
-                    console.log("成功啟用硬體連續自動對焦。");
                 }
             } catch (focusErr) {
-                // 部分客製化 Android 瀏覽器或 iOS 舊版本不開放直接控制 FocusMode，此時會自動跳過不影響運作
-                console.warn("瀏覽器不允許直接控制相機對焦模式，改用系統預設對焦:", focusErr);
+                console.warn("自動對焦模式設定受限，改用預設對焦:", focusErr);
             }
         }
 
-        // 局部剪裁高速辨識
+        // 精準局部剪裁
         async function processFrame() {
             if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
             isProcessing = true;
@@ -170,6 +169,7 @@
                 const vWidth = video.videoWidth;
                 const vHeight = video.videoHeight;
 
+                // 依據對焦框 CSS (top: 35%, left: 15%, width: 70%, height: 30%) 裁剪相機畫面
                 const cropX = vWidth * 0.15;
                 const cropY = vHeight * 0.35;
                 const cropW = vWidth * 0.70;
@@ -179,7 +179,7 @@
                 canvas.height = cropH;
                 const ctx = canvas.getContext('2d');
                 
-                // 工業特化極致二值化：提高 contrast 降噪，幫助失焦過渡期的模糊字體提早收斂成清晰黑白線條
+                // 強效黑白高對比濾鏡
                 ctx.filter = 'grayscale(1) contrast(3.0) brightness(1.0)';
                 ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
                 ctx.filter = 'none'; 
@@ -205,7 +205,7 @@
                 }
                 
             } catch (error) {
-                console.error("高速處理幀出錯:", error);
+                console.error("處理出錯:", error);
             } finally {
                 isProcessing = false;
             }
