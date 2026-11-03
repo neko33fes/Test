@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>即時文字掃描與比對 App</title>
+    <title>中英文字檢測 App (不分大小寫版)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -16,8 +16,7 @@
             padding: 10px; 
         }
         h2 { margin: 10px 0; font-size: 20px; }
-        
-        .input-group { margin: 10px 0; }
+        .input-group { margin: 8px 0; }
         input[type="text"] { 
             padding: 10px; 
             font-size: 16px; 
@@ -29,7 +28,6 @@
             color: #fff; 
             text-align: center; 
         }
-
         .checkbox-group {
             margin: 8px 0;
             font-size: 14px;
@@ -86,24 +84,24 @@
         .capture-box {
             position: absolute;
             top: 50%;
-            left: 0;
-            right: 0;
-            height: 60px; 
+            left: 10%;
+            right: 10%;
+            height: 50px; 
             transform: translateY(-50%);
             border: 2px dashed #ffeb3b; 
             pointer-events: none;
             z-index: 9;
             box-sizing: border-box;
             background-color: rgba(255, 235, 59, 0.05);
-            display: none; 
+            display: none; /* 預設 OFF */
         }
 
-        /* 狀態看板樣式 (PASS / FAIL) */
+        /* 狀態看板樣式 */
         .status-box { 
-            margin: 12px auto; 
-            padding: 14px; 
+            margin: 15px auto; 
+            padding: 16px; 
             max-width: 400px; 
-            font-size: 20px; 
+            font-size: 22px; 
             font-weight: bold; 
             border-radius: 10px; 
             transition: 0.3s; 
@@ -111,55 +109,19 @@
         .pending { background: #ef6c00; color: #fff; }
         .pass { background: #2e7d32; color: #fff; }
         .fail { background: #c62828; color: #fff; }
-
-        /* 文字輸出區塊 */
-        .output-container {
-            margin: 10px auto;
-            max-width: 400px;
-            padding: 0 10px;
-        }
-        textarea {
-            width: 100%;
-            height: 90px;
-            padding: 10px;
-            font-size: 15px;
-            border-radius: 8px;
-            border: 1px solid #444;
-            background: #1e1e1e;
-            color: #fff;
-            box-sizing: border-box;
-            resize: none;
-        }
-        .btn {
-            background: #1976d2;
-            color: #fff;
-            border: none;
-            padding: 10px 20px;
-            font-size: 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            margin-top: 8px;
-            width: 100%;
-            max-width: 400px;
-        }
-        .btn:active {
-            background: #115293;
-        }
-
         p { font-size: 13px; color: #aaa; margin: 6px 0; }
     </style>
 </head>
 <body>
 
-    <h2>即時文字掃描與比對系統</h2>
+    <h2>中英文字檢測系統</h2>
     
-    <!-- 預期比對文字輸入 -->
     <div class="input-group">
-        <label>預期比對文字：</label><br>
-        <input type="text" id="expectedText" value="ABC-1234" placeholder="請輸入欲比對的文字...">
+        <label>預期文字：</label><br>
+        <input type="text" id="expectedText" value="NE5532P">
     </div>
 
-    <!-- 黃框顯示開關 -->
+    <!-- 黃框顯示開關 (預設 OFF) -->
     <div class="checkbox-group">
         <label>
             <input type="checkbox" id="showBoxToggle"> 顯示黃色擷取範圍框
@@ -174,27 +136,20 @@
     </div>
     <canvas id="canvas"></canvas>
 
-    <!-- 檢測結果看板 -->
-    <div id="statusBox" class="status-box pending">正在載入辨識引擎...</div>
-
-    <!-- 掃描結果輸出區 -->
-    <div class="output-container">
-        <textarea id="resultText" placeholder="掃描到的文字將會顯示在這裡..."></textarea>
-        <button class="btn" id="copyBtn">複製識別文字</button>
-    </div>
-    
-    <p>（請將目標文字對準紅線與黃框，系統將自動比對是否相符）</p>
+    <!-- 狀態顯示 -->
+    <div id="statusBox" class="status-box pending">正在載入中英文字型模型...</div>
+    <p id="detectedText">識別文字：無</p>
+    <p>（請將目標文字對準紅線，點擊畫面可手動觸發對焦）</p>
 
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const statusBox = document.getElementById('statusBox');
         const expectedInput = document.getElementById('expectedText');
-        const resultText = document.getElementById('resultText');
         const videoContainer = document.getElementById('videoContainer');
+        const detectedTextEl = document.getElementById('detectedText');
         const showBoxToggle = document.getElementById('showBoxToggle');
         const captureBox = document.getElementById('captureBox');
-        const copyBtn = document.getElementById('copyBtn');
 
         let videoTrack = null;
         let worker = null;
@@ -205,26 +160,14 @@
             captureBox.style.display = e.target.checked ? 'block' : 'none';
         });
 
-        // 複製按鈕事件
-        copyBtn.addEventListener('click', () => {
-            if (!resultText.value) return;
-            navigator.clipboard.writeText(resultText.value).then(() => {
-                const originalText = copyBtn.innerText;
-                copyBtn.innerText = "已複製！";
-                setTimeout(() => { copyBtn.innerText = originalText; }, 1500);
-            }).catch(err => {
-                alert("複製失敗，請手動複製");
-            });
-        });
-
-        // 初始化 Tesseract AI 辨識引擎
+        // 初始化 Tesseract AI 辨識引擎 (同時載入英文與繁體中文)
         async function initOCR() {
             try {
-                statusBox.innerText = "載入中英文字型模型中 (初次需下載)...";
+                statusBox.innerText = "載入中英文字型模型中 (初次需下載較大檔案，請稍候)...";
                 worker = await Tesseract.createWorker(['eng', 'chi_tra']);
-                
+
                 statusBox.className = "status-box pending";
-                statusBox.innerText = "引擎就緒，等待比對";
+                statusBox.innerText = "引擎就緒，請開始中英文檢測";
                 startCamera();
             } catch (err) {
                 statusBox.innerText = "辨識引擎載入失敗";
@@ -254,7 +197,7 @@
 
                 videoContainer.addEventListener('click', () => triggerFastManualFocus());
 
-                // 每 2.5 秒自動執行畫面裁切、影像增強與比對
+                // 每 2.5 秒執行一次辨識
                 setInterval(processFrame, 2500);
             } catch (err) {
                 alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS！");
@@ -262,7 +205,7 @@
             }
         }
 
-        // 核心：適應性裁剪 + 影像前處理 + 即時比對
+        // 核心：影像預處理與裁切辨識
         async function processFrame() {
             if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
             
@@ -272,54 +215,51 @@
                 const vWidth = video.videoWidth;   
                 const vHeight = video.videoHeight; 
 
-                const uiBoxHeightPx = 60; 
+                const uiBoxHeightPx = 50; 
                 const containerHeight = videoContainer.clientHeight;
 
-                const boxW = vWidth;
+                const boxW = vWidth * 0.8; // 左右各內縮 10%
                 const boxH = uiBoxHeightPx * (vHeight / containerHeight);
-                const boxX = 0;
+                const boxX = (vWidth - boxW) / 2;
                 const boxY = (vHeight - boxH) / 2;
 
-                // 放大 2 倍以利 OCR 辨識
-                canvas.width = boxW * 2;   
-                canvas.height = boxH * 2;
+                canvas.width = boxW;   
+                canvas.height = boxH;
                 const ctx = canvas.getContext('2d');
 
-                // 1. 繪製裁切區塊
-                ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, canvas.width, canvas.height);
+                // 1. 繪製裁切畫面
+                ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, boxW, boxH);
 
-                // 2. 影像前處理（轉灰階並增強對比度）
+                // 2. 影像前處理：轉為灰階並增強對比
                 let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 let data = imgData.data;
                 for (let i = 0; i < data.length; i += 4) {
-                    let avg = data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11;
-                    let contrast = 1.3; 
-                    let corrected = data[i] < 128 ? data[i] / contrast : data[i] * contrast;
-                    
-                    data[i]     = avg; 
-                    data[i + 1] = avg; 
-                    data[i + 2] = avg; 
+                    let avg = (data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11); // 轉灰階
+                    let contrasted = avg < 120 ? 0 : 255; 
+                    data[i]     = contrasted; // R
+                    data[i + 1] = contrasted; // G
+                    data[i + 2] = contrasted; // B
                 }
                 ctx.putImageData(imgData, 0, 0);
 
                 // 3. 執行辨識
                 const { data: { text } } = await worker.recognize(canvas);
-                const cleanText = text.replace(/[\r\n]+/g, ' ').trim();
+                const cleanText = text.replace(/[\s\r\n]+/g, '').trim();
                 
                 if (cleanText) {
-                    resultText.value = cleanText;
+                    detectedTextEl.innerText = "識別文字：" + cleanText;
                 } else {
-                    resultText.value = "(尋找中...)";
+                    detectedTextEl.innerText = "識別文字：(尋找中...)";
                 }
 
-                // 4. 比對邏輯
-                const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim().toUpperCase();
-                const actual = cleanText.replace(/[\s\r\n]+/g, '').toUpperCase();
+                const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim();
                 
-                if (!expected) {
-                    statusBox.className = "status-box pending";
-                    statusBox.innerText = "請輸入預期比對文字";
-                } else if (actual && actual.includes(expected)) {
+                // 不分大小寫比對：將辨識結果與預期文字皆轉為大寫
+                const actualUpper = cleanText.toUpperCase();
+                const expectedUpper = expected.toUpperCase();
+
+                // 比對結果判定 PASS / FAIL
+                if (expectedUpper && actualUpper.includes(expectedUpper)) {
                     statusBox.className = "status-box pass";
                     statusBox.innerText = "【 PASS 】文字相符";
                 } else {
