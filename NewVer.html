@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>即時文字掃描與比對 App</title>
+    <!-- 引入 Tesseract.js 文字辨識庫 -->
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background: #121212; 
+            color: #fff; 
+            text-align: center; 
+            margin: 0; 
+            padding: 10px; 
+        }
+        h2 { margin: 10px 0; font-size: 20px; }
+        
+        .input-group { margin: 10px 0; }
+        input[type="text"] { 
+            padding: 10px; 
+            font-size: 16px; 
+            width: 80%; 
+            max-width: 300px; 
+            border-radius: 6px; 
+            border: 1px solid #444; 
+            background: #222; 
+            color: #fff; 
+            text-align: center; 
+        }
+
+        .checkbox-group {
+            margin: 8px 0;
+            font-size: 14px;
+            color: #ccc;
+            cursor: pointer;
+        }
+        .checkbox-group input {
+            transform: scale(1.2);
+            margin-right: 6px;
+            cursor: pointer;
+        }
+
+        /* 具備響應式適應力的相機預覽框 */
+        .video-container { 
+            position: relative; 
+            width: 100%; 
+            max-width: 400px; 
+            height: 240px; 
+            margin: 10px auto; 
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid #444;
+            background: #000;
+            cursor: pointer;
+        }
+        video { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+            display: block; 
+        }
+        canvas { display: none; }
+        
+        /* 透過百分比置中對齊的基準紅線 */
+        .scan-line {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            transform: translateY(-50%);
+            pointer-events: none;
+            z-index: 10;
+            background: repeating-linear-gradient(
+                to right,
+                #ff1744,
+                #ff1744 12px,
+                transparent 12px,
+                transparent 24px
+            );
+        }
+
+        /* 黃色虛線框 */
+        .capture-box {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 60px; 
+            transform: translateY(-50%);
+            border: 2px dashed #ffeb3b; 
+            pointer-events: none;
+            z-index: 9;
+            box-sizing: border-box;
+            background-color: rgba(255, 235, 59, 0.05);
+            display: none; 
+        }
+
+        /* 狀態看板樣式 (PASS / FAIL) */
+        .status-box { 
+            margin: 12px auto; 
+            padding: 14px; 
+            max-width: 400px; 
+            font-size: 20px; 
+            font-weight: bold; 
+            border-radius: 10px; 
+            transition: 0.3s; 
+        }
+        .pending { background: #ef6c00; color: #fff; }
+        .pass { background: #2e7d32; color: #fff; }
+        .fail { background: #c62828; color: #fff; }
+
+        /* 文字輸出區塊 */
+        .output-container {
+            margin: 10px auto;
+            max-width: 400px;
+            padding: 0 10px;
+        }
+        textarea {
+            width: 100%;
+            height: 90px;
+            padding: 10px;
+            font-size: 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            background: #1e1e1e;
+            color: #fff;
+            box-sizing: border-box;
+            resize: none;
+        }
+        .btn {
+            background: #1976d2;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 8px;
+            width: 100%;
+            max-width: 400px;
+        }
+        .btn:active {
+            background: #115293;
+        }
+
+        p { font-size: 13px; color: #aaa; margin: 6px 0; }
+    </style>
+</head>
+<body>
+
+    <h2>即時文字掃描與比對系統</h2>
+    
+    <!-- 預期比對文字輸入 -->
+    <div class="input-group">
+        <label>預期比對文字：</label><br>
+        <input type="text" id="expectedText" value="ABC-1234" placeholder="請輸入欲比對的文字...">
+    </div>
+
+    <!-- 黃框顯示開關 -->
+    <div class="checkbox-group">
+        <label>
+            <input type="checkbox" id="showBoxToggle"> 顯示黃色擷取範圍框
+        </label>
+    </div>
+
+    <!-- 相機與掃描框 -->
+    <div class="video-container" id="videoContainer">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="capture-box" id="captureBox"></div>
+        <div class="scan-line"></div>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <!-- 檢測結果看板 -->
+    <div id="statusBox" class="status-box pending">正在載入辨識引擎...</div>
+
+    <!-- 掃描結果輸出區 -->
+    <div class="output-container">
+        <textarea id="resultText" placeholder="掃描到的文字將會顯示在這裡..."></textarea>
+        <button class="btn" id="copyBtn">複製識別文字</button>
+    </div>
+    
+    <p>（請將目標文字對準紅線與黃框，系統將自動比對是否相符）</p>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const statusBox = document.getElementById('statusBox');
+        const expectedInput = document.getElementById('expectedText');
+        const resultText = document.getElementById('resultText');
+        const videoContainer = document.getElementById('videoContainer');
+        const showBoxToggle = document.getElementById('showBoxToggle');
+        const captureBox = document.getElementById('captureBox');
+        const copyBtn = document.getElementById('copyBtn');
+
+        let videoTrack = null;
+        let worker = null;
+        let isProcessing = false;
+
+        // 監聽黃框開關切換
+        showBoxToggle.addEventListener('change', (e) => {
+            captureBox.style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        // 複製按鈕事件
+        copyBtn.addEventListener('click', () => {
+            if (!resultText.value) return;
+            navigator.clipboard.writeText(resultText.value).then(() => {
+                const originalText = copyBtn.innerText;
+                copyBtn.innerText = "已複製！";
+                setTimeout(() => { copyBtn.innerText = originalText; }, 1500);
+            }).catch(err => {
+                alert("複製失敗，請手動複製");
+            });
+        });
+
+        // 初始化 Tesseract AI 辨識引擎
+        async function initOCR() {
+            try {
+                statusBox.innerText = "載入中英文字型模型中 (初次需下載)...";
+                worker = await Tesseract.createWorker(['eng', 'chi_tra']);
+                
+                statusBox.className = "status-box pending";
+                statusBox.innerText = "引擎就緒，等待比對";
+                startCamera();
+            } catch (err) {
+                statusBox.innerText = "辨識引擎載入失敗";
+                console.error(err);
+            }
+        }
+
+        // 啟動手機相機
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: { exact: "environment" },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        focusMode: "continuous"
+                    }
+                }).catch(() => {
+                    return navigator.mediaDevices.getUserMedia({ video: true });
+                });
+
+                video.srcObject = stream;
+                video.play();
+                
+                videoTrack = stream.getVideoTracks()[0];
+                await applyFastFocusSettings(videoTrack);
+
+                videoContainer.addEventListener('click', () => triggerFastManualFocus());
+
+                // 每 2.5 秒自動執行畫面裁切、影像增強與比對
+                setInterval(processFrame, 2500);
+            } catch (err) {
+                alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS！");
+                statusBox.innerText = "相機開啟失敗";
+            }
+        }
+
+        // 核心：適應性裁剪 + 影像前處理 + 即時比對
+        async function processFrame() {
+            if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            
+            isProcessing = true;
+
+            try {
+                const vWidth = video.videoWidth;   
+                const vHeight = video.videoHeight; 
+
+                const uiBoxHeightPx = 60; 
+                const containerHeight = videoContainer.clientHeight;
+
+                const boxW = vWidth;
+                const boxH = uiBoxHeightPx * (vHeight / containerHeight);
+                const boxX = 0;
+                const boxY = (vHeight - boxH) / 2;
+
+                // 放大 2 倍以利 OCR 辨識
+                canvas.width = boxW * 2;   
+                canvas.height = boxH * 2;
+                const ctx = canvas.getContext('2d');
+
+                // 1. 繪製裁切區塊
+                ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, canvas.width, canvas.height);
+
+                // 2. 影像前處理（轉灰階並增強對比度）
+                let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                let data = imgData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    let avg = data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11;
+                    let contrast = 1.3; 
+                    let corrected = data[i] < 128 ? data[i] / contrast : data[i] * contrast;
+                    
+                    data[i]     = avg; 
+                    data[i + 1] = avg; 
+                    data[i + 2] = avg; 
+                }
+                ctx.putImageData(imgData, 0, 0);
+
+                // 3. 執行辨識
+                const { data: { text } } = await worker.recognize(canvas);
+                const cleanText = text.replace(/[\r\n]+/g, ' ').trim();
+                
+                if (cleanText) {
+                    resultText.value = cleanText;
+                } else {
+                    resultText.value = "(尋找中...)";
+                }
+
+                // 4. 比對邏輯
+                const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim().toUpperCase();
+                const actual = cleanText.replace(/[\s\r\n]+/g, '').toUpperCase();
+                
+                if (!expected) {
+                    statusBox.className = "status-box pending";
+                    statusBox.innerText = "請輸入預期比對文字";
+                } else if (actual && actual.includes(expected)) {
+                    statusBox.className = "status-box pass";
+                    statusBox.innerText = "【 PASS 】文字相符";
+                } else {
+                    statusBox.className = "status-box fail";
+                    statusBox.innerText = "【 FAIL 】文字不符";
+                }
+            } catch (error) {
+                console.error(error);
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        // 相機自動對焦設定
+        async function applyFastFocusSettings(track) {
+            try {
+                const capabilities = track.getCapabilities();
+                if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+                    await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                }
+            } catch (err) {
+                console.log("不支援進階對焦", err);
+            }
+        }
+
+        // 點擊畫面單次極速對焦
+        async function triggerFastManualFocus() {
+            if (!videoTrack) return;
+            try {
+                const capabilities = videoTrack.getCapabilities();
+                if (capabilities.focusMode && capabilities.focusMode.includes('single-shot')) {
+                    await videoTrack.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
+                    setTimeout(async () => {
+                        await videoTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                    }, 1000);
+                }
+            } catch (err) {
+                console.log("手動對焦受限", err);
+            }
+        }
+
+        window.onload = initOCR;
+    </script>
+</body>
+</html>
