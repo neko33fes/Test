@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IC 即時檢測 App (完整優化版)</title>
+    <title>IC 即時檢測 App (純紅線對齊版)</title>
     <!-- 引入 Tesseract.js 文字辨識庫 -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -50,30 +50,17 @@
         }
         canvas { display: none; }
         
-        /* 綠色取景對齊框 */
-        .scan-box {
+        /* 正中水平紅線：左右貼邊，線上方無任何文字 */
+        .scan-line {
             position: absolute;
             top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 80%;   
-            height: 55px; 
-            border: 2px dashed #00e676;
-            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
-            pointer-events: none;
-            border-radius: 6px;
-            box-sizing: border-box;
-        }
-        .scan-box::after {
-            content: "請將 IC 刻字置於綠框內 (點擊畫面可對焦)";
-            position: absolute;
-            bottom: -24px;
             left: 0;
             right: 0;
-            font-size: 11px;
-            color: #00e676;
-            text-align: center;
-            white-space: nowrap;
+            height: 0px;
+            border-top: 2px dashed #ff1744; /* 紅色虛線 */
+            transform: translateY(-50%);
+            pointer-events: none;
+            z-index: 10;
         }
 
         /* 狀態看板樣式 */
@@ -101,17 +88,17 @@
         <input type="text" id="expectedText" value="NE5532P">
     </div>
 
-    <!-- 相機與對齊框 -->
+    <!-- 相機與紅線對齊 -->
     <div class="video-container" id="videoContainer">
         <video id="video" autoplay playsinline muted></video>
-        <div class="scan-box"></div>
+        <div class="scan-line"></div>
     </div>
     <canvas id="canvas"></canvas>
 
     <!-- 狀態顯示 -->
     <div id="statusBox" class="status-box pending">正在載入 AI 辨識引擎...</div>
-    <p id="detectedText">框內識別文字：無</p>
-    <p>（請將 IC 靠近綠框，系統將自動背景辨識並顯示 PASS/FAIL）</p>
+    <p id="detectedText">識別文字：無</p>
+    <p>（請將 IC 字體對齊紅線，系統將自動背景辨識並顯示 PASS/FAIL）</p>
 
     <script>
         const video = document.getElementById('video');
@@ -161,7 +148,7 @@
                 // 點擊畫面任意處觸發極速手動對焦
                 videoContainer.addEventListener('click', () => triggerFastManualFocus());
 
-                // 每 2 秒自動抓取綠框內的影像進行背景辨識
+                // 每 2 秒自動抓取紅線周圍的影像進行背景辨識
                 setInterval(processFrame, 2000);
             } catch (err) {
                 alert("無法開啟相機，請檢查瀏覽器權限或確認是否使用 HTTPS/Localhost！");
@@ -169,7 +156,7 @@
             }
         }
 
-        // 核心：精準裁切綠框範圍並辨識
+        // 核心：精準裁切紅線周圍（全寬、高 40px 的水平橫條）進行辨識
         async function processFrame() {
             if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
             
@@ -179,17 +166,15 @@
                 const vWidth = video.videoWidth;
                 const vHeight = video.videoHeight;
 
-                // 計算綠色對齊框在影片中的實際座標
-                const boxW = vWidth * 0.8;
-                const boxH = 55 * (vHeight / videoContainer.clientHeight);
-                const boxX = (vWidth - boxW) / 2;
+                const boxW = vWidth; 
+                const boxH = 40 * (vHeight / videoContainer.clientHeight); 
+                const boxX = 0;
                 const boxY = (vHeight - boxH) / 2;
 
                 canvas.width = boxW * 2;
                 canvas.height = boxH * 2;
                 const ctx = canvas.getContext('2d');
 
-                // 僅將綠框內的畫面繪製到 Canvas 並放大 2 倍
                 ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, canvas.width, canvas.height);
 
                 // 執行辨識
@@ -197,9 +182,9 @@
                 const cleanText = text.replace(/\s+/g, ' ').trim();
                 
                 if (cleanText) {
-                    detectedTextEl.innerText = "框內識別文字：" + cleanText;
+                    detectedTextEl.innerText = "識別文字：" + cleanText;
                 } else {
-                    detectedTextEl.innerText = "框內識別文字：(尋找中...)";
+                    detectedTextEl.innerText = "識別文字：(尋找中...)";
                 }
 
                 const expected = expectedInput.value.trim().toUpperCase();
