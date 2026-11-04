@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>文字比對系統</title>
+    <title>文字比對系統 - 下拉選單整合版</title>
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
         html, body {
@@ -26,7 +26,7 @@
             display: flex;
             flex-direction: column;
             align-items: stretch;
-            gap: 4px;
+            gap: 6px;
         }
         h2 {
             margin: 0;
@@ -37,32 +37,17 @@
             width: 100%;
             flex-shrink: 0;
         }
-        .btn-group {
+        /* 下拉選單控制群組排版 (2 欄格子) */
+        .controls-grid {
             width: 100%;
-            display: flex;
-            gap: 4px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
             flex-shrink: 0;
         }
-        .ctrl-btn {
-            flex: 1;
-            padding: 4px;
-            font-size: 11px;
-            font-weight: bold;
-            border-radius: 6px;
-            border: 2px solid #444;
-            background: #222;
-            color: #aaa;
-            cursor: pointer;
-            text-align: center;
-        }
-        .ctrl-btn.active {
-            background: #00e676;
-            color: #000;
-            border-color: #00e676;
-        }
-        input[type="text"] {
-            padding: 8px;
-            font-size: 15px;
+        select, input[type="text"] {
+            padding: 9px;
+            font-size: 14px;
             width: 100%;
             box-sizing: border-box;
             border-radius: 8px;
@@ -70,6 +55,12 @@
             background: #222;
             color: #fff;
             text-align: center;
+            outline: none;
+        }
+        select {
+            text-align-last: center; /* 讓下拉選單文字置中 */
+            color: #00e676; /* 用高亮色凸顯下拉選單 */
+            font-weight: bold;
         }
         input[type="text"]::placeholder {
             color: #777;
@@ -77,54 +68,40 @@
         .video-container {
             position: relative;
             width: 100%;
-            height: 100%;
+            height: 50%; /* 預設預覽高度 50% */
             max-height: 100%;
             border-radius: 10px;
             overflow: hidden;
             border: 2px solid #444;
             background: #000;
-            cursor: pointer;
             box-sizing: border-box;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: height 0.2s ease;
-            flex-shrink: 1;
-            min-height: 0;
+            flex-shrink: 0;
         }
         video {
             width: 100%;
             height: 100%;
             object-fit: cover;
             display: block;
+            transform-origin: center center;
+            transition: transform 0.2s ease;
         }
         canvas {
             display: none;
         }
-        .crosshair {
+        /* 黃色實線擷取框 (動態大小) */
+        .scan-box {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            width: var(--box-size, 50%);
+            height: var(--box-size, 50%);
+            border: 2px solid rgba(255, 235, 59, 0.8);
+            box-sizing: border-box;
             pointer-events: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .crosshair::before {
-            content: '';
-            position: absolute;
-            width: 100%;
-            height: 1px;
-            background: repeating-linear-gradient(to right, #00e676, #00e676 8px, transparent 8px, transparent 18px);
-        }
-        .crosshair::after {
-            content: '';
-            position: absolute;
-            width: 1px;
-            height: 100%;
-            background: repeating-linear-gradient(to bottom, #00e676, #00e676 8px, transparent 8px, transparent 18px);
+            border-radius: 6px;
+            transition: width 0.2s ease, height 0.2s ease;
         }
         .status-box {
             padding: 8px;
@@ -152,43 +129,83 @@
 <body>
     <div class="wrapper">
         <h2>文字比對系統</h2>
+        
         <div class="input-group">
-            <input type="text" id="expectedText" placeholder="請輸入確認文字" value="">
+            <input type="text" id="expectedText" placeholder="請輸入欲檢核的特定文字" value="">
         </div>
-        <div class="btn-group">
-            <button class="ctrl-btn" onclick="setIntervalTime(1, this)">1s</button>
-            <button class="ctrl-btn" onclick="setIntervalTime(2, this)">2s</button>
-            <button class="ctrl-btn active" onclick="setIntervalTime(2.5, this)">2.5s</button>
-            <button class="ctrl-btn" onclick="setIntervalTime(3, this)">3s</button>
-            <button class="ctrl-btn" onclick="setIntervalTime(5, this)">5s</button>
+
+        <!-- 下拉式控制面板 (說明文字直接內嵌於選單中) -->
+        <div class="controls-grid">
+            <!-- 1. 掃描頻率 -->
+            <select id="intervalSelect" onchange="changeInterval(this)">
+                <option value="" disabled>⏱️ 頻率：選擇中</option>
+                <option value="1">頻率: 1.0 秒</option>
+                <option value="2">頻率: 2.0 秒</option>
+                <option value="2.5" selected>頻率: 2.5 秒</option>
+                <option value="3">頻率: 3.0 秒</option>
+                <option value="5">頻率: 5.0 秒</option>
+            </select>
+
+            <!-- 2. 相機預覽高度 -->
+            <select id="heightSelect" onchange="changeVideoHeight(this)">
+                <option value="" disabled>📱 高度：選擇中</option>
+                <option value="100%">高度: 100%</option>
+                <option value="75%">高度: 75%</option>
+                <option value="50%" selected>高度: 50%</option>
+                <option value="25%">高度: 25%</option>
+                <option value="10%">高度: 10%</option>
+            </select>
+
+            <!-- 3. 黃色擷取框大小 -->
+            <select id="boxSelect" onchange="changeScanBoxSize(this)">
+                <option value="" disabled>🔲 框大小：選擇中</option>
+                <option value="1.0">框大小: 100%</option>
+                <option value="0.75">框大小: 75%</option>
+                <option value="0.5" selected>框大小: 50%</option>
+                <option value="0.25">框大小: 25%</option>
+                <option value="0.1">框大小: 10%</option>
+            </select>
+
+            <!-- 4. 鏡頭放大倍率 -->
+            <select id="zoomSelect" onchange="changeZoom(this)">
+                <option value="" disabled>🔍 放大：選擇中</option>
+                <option value="1" selected>放大: 1x</option>
+                <option value="2">放大: 2x</option>
+                <option value="5">放大: 5x</option>
+                <option value="10">放大: 10x</option>
+            </select>
         </div>
-        <div class="btn-group">
-            <button class="ctrl-btn active" onclick="setVideoHeight('100%', this)">100%</button>
-            <button class="ctrl-btn" onclick="setVideoHeight('75%', this)">75%</button>
-            <button class="ctrl-btn" onclick="setVideoHeight('50%', this)">50%</button>
-            <button class="ctrl-btn" onclick="setVideoHeight('25%', this)">25%</button>
-            <button class="ctrl-btn" onclick="setVideoHeight('10%', this)">10%</button>
-        </div>
-        <div class="video-container" id="videoContainer" style="height: 100%;">
+
+        <div class="video-container" id="videoContainer" style="height: 50%;">
             <video id="video" autoplay playsinline muted></video>
-            <div class="crosshair"></div>
+            <div id="scanBox" class="scan-box" style="--box-size: 50%;"></div>
         </div>
         <canvas id="canvas"></canvas>
         <div id="statusBox" class="status-box pending">正在載入模型...</div>
     </div>
+
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const statusBox = document.getElementById('statusBox');
         const expectedInput = document.getElementById('expectedText');
         const videoContainer = document.getElementById('videoContainer');
+        const scanBox = document.getElementById('scanBox');
         
         let videoTrack = null, worker = null, isProcessing = false, scanTimer = null;
         let currentInterval = 2.5;
+        let currentBoxScale = 0.5; 
+        let currentZoom = 1;       
 
-        function setVideoHeight(heightPercent, btn) {
-            btn.parentElement.querySelectorAll('.ctrl-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+        let failCount = 0; 
+        const requiredFailCount = 2; 
+
+        // 預先建立旋轉用的快取 Canvas
+        const rotCanvas = document.createElement('canvas');
+        const rotCtx = rotCanvas.getContext('2d');
+
+        function changeVideoHeight(selectObj) {
+            const heightPercent = selectObj.value;
             videoContainer.style.height = heightPercent;
             if (heightPercent === '100%') {
                 videoContainer.style.flex = '1';
@@ -198,11 +215,33 @@
             }
         }
 
-        function setIntervalTime(secs, btn) {
-            btn.parentElement.querySelectorAll('.ctrl-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            currentInterval = secs;
+        function changeScanBoxSize(selectObj) {
+            currentBoxScale = parseFloat(selectObj.value);
+            scanBox.style.setProperty('--box-size', (currentBoxScale * 100) + '%');
+        }
+
+        function changeInterval(selectObj) {
+            currentInterval = parseFloat(selectObj.value);
+            failCount = 0;
             restartScanLoop();
+        }
+
+        async function changeZoom(selectObj) {
+            const zoomLevel = parseFloat(selectObj.value);
+            currentZoom = zoomLevel;
+
+            if (videoTrack) {
+                try {
+                    const caps = videoTrack.getCapabilities();
+                    if (caps.zoom) {
+                        const targetZoom = Math.min(Math.max(zoomLevel, caps.zoom.min), caps.zoom.max);
+                        await videoTrack.applyConstraints({ advanced: [{ zoom: targetZoom }] });
+                        video.style.transform = 'scale(1)';
+                        return;
+                    }
+                } catch (e) {}
+            }
+            video.style.transform = `scale(${zoomLevel})`;
         }
 
         async function initOCR() {
@@ -233,7 +272,6 @@
                         await videoTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
                     }
                 } catch (e) {}
-                videoContainer.addEventListener('click', triggerManualFocus);
             } catch (err) {
                 statusBox.innerText = "相機開啟失敗";
             }
@@ -250,75 +288,69 @@
 
         async function processFrame() {
             if (!worker || isProcessing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            
             const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim().toUpperCase();
             if (!expected) {
                 statusBox.className = "status-box pending";
                 statusBox.innerText = "請於上方輸入確認文字";
+                failCount = 0;
                 return;
             }
+
             isProcessing = true;
             try {
                 const vW = video.videoWidth, vH = video.videoHeight;
-                const boxW = vW * 0.75, boxH = vH * 0.75;
+                const boxW = vW * currentBoxScale, boxH = vH * currentBoxScale;
                 const boxX = (vW - boxW) / 2, boxY = (vH - boxH) / 2;
                 canvas.width = boxW; canvas.height = boxH;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, boxW, boxH);
-                let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                let data = imgData.data;
-                for (let i = 0; i < data.length; i += 4) {
-                    let avg = (data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11);
-                    let val = avg < 120 ? 0 : 255;
-                    data[i] = data[i+1] = data[i+2] = val;
-                }
-                ctx.putImageData(imgData, 0, 0);
+                
                 const angles = [0, 90, 180, 270];
                 let matched = false;
+
                 for (let angle of angles) {
                     let targetCanvas = canvas;
                     if (angle !== 0) {
-                        const rotCanvas = document.createElement('canvas');
                         const isSwap = (angle === 90 || angle === 270);
                         rotCanvas.width = isSwap ? boxH : boxW;
                         rotCanvas.height = isSwap ? boxW : boxH;
-                        const rotCtx = rotCanvas.getContext('2d');
+                        rotCtx.clearRect(0, 0, rotCanvas.width, rotCanvas.height);
+                        rotCtx.save();
                         rotCtx.translate(rotCanvas.width / 2, rotCanvas.height / 2);
                         rotCtx.rotate((angle * Math.PI) / 180);
                         rotCtx.drawImage(canvas, -boxW / 2, -boxH / 2);
+                        rotCtx.restore();
                         targetCanvas = rotCanvas;
                     }
                     const { data: { text } } = await worker.recognize(targetCanvas);
                     const cleanText = text.replace(/[\s\r\n]+/g, '').trim().toUpperCase();
+                    
                     if (cleanText.includes(expected)) {
                         matched = true;
-                        break;
+                        break; // 💡 快速中斷
                     }
                 }
+
                 if (matched) {
+                    failCount = 0;
                     statusBox.className = "status-box pass";
                     statusBox.innerText = "【 PASS 】文字相符";
                 } else {
-                    statusBox.className = "status-box fail";
-                    statusBox.innerText = "【 FAIL 】文字不符";
+                    failCount++;
+                    if (failCount >= requiredFailCount) {
+                        statusBox.className = "status-box fail";
+                        statusBox.innerText = "【 FAIL 】文字不符";
+                    } else {
+                        statusBox.className = "status-box pending";
+                        statusBox.innerText = "【 檢核中... 】再次確認中";
+                    }
                 }
             } catch (error) {
                 console.error(error);
             } finally {
                 isProcessing = false;
             }
-        }
-
-        async function triggerManualFocus() {
-            if (!videoTrack) return;
-            try {
-                const caps = videoTrack.getCapabilities();
-                if (caps.focusMode && caps.focusMode.includes('single-shot')) {
-                    await videoTrack.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
-                    setTimeout(async () => {
-                        await videoTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-                    }, 1000);
-                }
-            } catch (e) {}
         }
 
         window.onload = initOCR;
