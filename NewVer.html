@@ -7,7 +7,7 @@
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
         :root {
-            --border-color: #404040; /* 預設 75%黑 / 深灰色外框 */
+            --border-color: #000000;
         }
         html, body {
             height: 100%;
@@ -60,7 +60,7 @@
         .config-btn {
             background: var(--btn-bg, #1a1a1a);
             color: var(--btn-text, #39c5bb);
-            border: 2px solid var(--border-color, #404040);
+            border: 2px solid var(--border-color, #000000);
             padding: 4px 10px;
             font-size: 1rem;
             font-weight: bold;
@@ -77,7 +77,7 @@
             width: 100%;
             box-sizing: border-box;
             border-radius: 8px;
-            border: 2px solid var(--border-color, #404040);
+            border: 2px solid var(--border-color, #000000);
             background: var(--input-bg, var(--bg-color, #404040));
             color: var(--input-text, #ffffff);
             text-align: center;
@@ -129,6 +129,18 @@
             font-size: 1rem;
             color: #dddddd;
         }
+        /* 多欄並排佈局樣式 */
+        .control-row-group {
+            display: flex;
+            gap: 6px;
+        }
+        .control-row-group .control-row {
+            flex: 1;
+        }
+        /* 針對三欄並排的文字微調，避免標題過長擠壓 */
+        .control-row-group.triple .control-row label {
+            font-size: 0.85rem;
+        }
         .modal-content select {
             padding: 6px 8px;
             font-size: 1rem;
@@ -176,7 +188,7 @@
             flex-shrink: 0;
             border-radius: 10px;
             overflow: hidden;
-            border: 2px solid var(--border-color, #404040);
+            border: 2px solid var(--border-color, #000000);
             background: var(--bg-color, #404040);
             box-sizing: border-box;
             display: flex;
@@ -301,13 +313,42 @@
         <div id="colorModal" class="modal-overlay">
             <div class="modal-content">
                 <h3>顏色設定</h3>
-                <div class="control-row">
-                    <label>相機未啟動前背景色 (#Hex)</label>
-                    <input type="text" id="bgBeforeInput" value="#404040" oninput="updateBgBefore(this)">
+                <!-- 背景色左右並排 -->
+                <div class="control-row-group">
+                    <div class="control-row">
+                        <label>啟動前背景色</label>
+                        <input type="text" id="bgBeforeInput" value="#404040" oninput="updateBgBefore(this)">
+                    </div>
+                    <div class="control-row">
+                        <label>啟動後背景色</label>
+                        <input type="text" id="bgAfterInput" value="#0f0f0f" oninput="updateBgAfter(this)">
+                    </div>
                 </div>
-                <div class="control-row">
-                    <label>相機啟動後背景色 (#Hex)</label>
-                    <input type="text" id="bgAfterInput" value="#0f0f0f" oninput="updateBgAfter(this)">
+                <!-- 外框顏色左右並排 -->
+                <div class="control-row-group">
+                    <div class="control-row">
+                        <label>啟動前外框色</label>
+                        <input type="text" id="borderBeforeInput" value="#000000" oninput="updateBorderBefore(this)">
+                    </div>
+                    <div class="control-row">
+                        <label>啟動後外框色</label>
+                        <input type="text" id="borderAfterInput" value="#404040" oninput="updateBorderAfter(this)">
+                    </div>
+                </div>
+                <!-- 狀態背景色三欄並排 -->
+                <div class="control-row-group triple">
+                    <div class="control-row">
+                        <label>PASS 狀態</label>
+                        <input type="text" id="passBgInput" value="#2e7d32" oninput="updateColorVar('--pass-bg', this)">
+                    </div>
+                    <div class="control-row">
+                        <label>FAIL 狀態</label>
+                        <input type="text" id="failBgInput" value="#c62828" oninput="updateColorVar('--fail-bg', this)">
+                    </div>
+                    <div class="control-row">
+                        <label>檢核中狀態</label>
+                        <input type="text" id="pendingBgInput" value="#ef6c00" oninput="updateColorVar('--pending-bg', this)">
+                    </div>
                 </div>
                 <div class="control-row">
                     <label>系統標題文字顏色 (#Hex)</label>
@@ -322,28 +363,12 @@
                     <input type="text" id="btnTextInput" value="#39c5bb" oninput="updateColorVar('--btn-text', this)">
                 </div>
                 <div class="control-row">
-                    <label>統一外框顏色 (#Hex)</label>
-                    <input type="text" id="borderColorInput" value="#404040" oninput="updateColorVar('--border-color', this)">
-                </div>
-                <div class="control-row">
                     <label>目標輸入框文字顏色 (#Hex)</label>
                     <input type="text" id="inputTextInput" value="#ffffff" oninput="updateColorVar('--input-text', this)">
                 </div>
                 <div class="control-row">
                     <label>中央檢測框顏色 (#Hex)</label>
                     <input type="text" id="scanBoxColorInput" value="#39c5bb" oninput="updateScanBoxColor(this)">
-                </div>
-                <div class="control-row">
-                    <label>PASS 狀態背景色 (#Hex)</label>
-                    <input type="text" id="passBgInput" value="#2e7d32" oninput="updateColorVar('--pass-bg', this)">
-                </div>
-                <div class="control-row">
-                    <label>FAIL 狀態背景色 (#Hex)</label>
-                    <input type="text" id="failBgInput" value="#c62828" oninput="updateColorVar('--fail-bg', this)">
-                </div>
-                <div class="control-row">
-                    <label>檢核中狀態背景色 (#Hex)</label>
-                    <input type="text" id="pendingBgInput" value="#ef6c00" oninput="updateColorVar('--pending-bg', this)">
                 </div>
                 <div class="control-row">
                     <label>狀態列文字顏色 (#Hex)</label>
@@ -375,9 +400,13 @@
         const scanBox = document.getElementById('scanBox');
         const bgBeforeInput = document.getElementById('bgBeforeInput');
         const bgAfterInput = document.getElementById('bgAfterInput');
+        const borderBeforeInput = document.getElementById('borderBeforeInput');
+        const borderAfterInput = document.getElementById('borderAfterInput');
         
         let customBgBefore = "#404040";
         let customBgAfter = "#0f0f0f";
+        let customBorderBefore = "#000000";
+        let customBorderAfter = "#404040";
         let cameraStarted = false;
 
         let videoTrack = null;
@@ -421,18 +450,28 @@
             let val = inputObj.value.trim();
             if (/^#[0-9A-Fa-f]{6}$/.test(val) || /^#[0-9A-Fa-f]{3}$/.test(val)) {
                 customBgBefore = val;
-                if (!cameraStarted) {
-                    applyBg(customBgBefore);
-                }
+                if (!cameraStarted) applyBg(customBgBefore);
             }
         }
         function updateBgAfter(inputObj) {
             let val = inputObj.value.trim();
             if (/^#[0-9A-Fa-f]{6}$/.test(val) || /^#[0-9A-Fa-f]{3}$/.test(val)) {
                 customBgAfter = val;
-                if (cameraStarted) {
-                    applyBg(customBgAfter);
-                }
+                if (cameraStarted) applyBg(customBgAfter);
+            }
+        }
+        function updateBorderBefore(inputObj) {
+            let val = inputObj.value.trim();
+            if (/^#[0-9A-Fa-f]{6}$/.test(val) || /^#[0-9A-Fa-f]{3}$/.test(val)) {
+                customBorderBefore = val;
+                if (!cameraStarted) document.documentElement.style.setProperty('--border-color', customBorderBefore);
+            }
+        }
+        function updateBorderAfter(inputObj) {
+            let val = inputObj.value.trim();
+            if (/^#[0-9A-Fa-f]{6}$/.test(val) || /^#[0-9A-Fa-f]{3}$/.test(val)) {
+                customBorderAfter = val;
+                if (cameraStarted) document.documentElement.style.setProperty('--border-color', customBorderAfter);
             }
         }
         function applyBg(color) {
@@ -443,9 +482,7 @@
             let val = inputObj.value.trim();
             if (/^#[0-9A-Fa-f]{6}$/.test(val) || /^#[0-9A-Fa-f]{3}$/.test(val)) {
                 document.documentElement.style.setProperty(variableName, val);
-                if (isBodyBackground) {
-                    applyBg(val);
-                }
+                if (isBodyBackground) applyBg(val);
             }
         }
         function updateScanBoxColor(inputObj) {
@@ -478,6 +515,9 @@
             updateMaxVideoHeight();
             try {
                 applyBg(customBgBefore);
+                document.documentElement.style.setProperty('--border-color', customBorderBefore);
+                borderBeforeInput.value = customBorderBefore;
+
                 statusBox.innerText = "載入中英文字型模型中...";
                 worker = await Tesseract.createWorker(['eng', 'chi_tra']);
                 statusBox.className = "status-box pending";
@@ -502,6 +542,9 @@
                 cameraStarted = true;
                 applyBg(customBgAfter);
                 bgAfterInput.value = customBgAfter;
+
+                document.documentElement.style.setProperty('--border-color', customBorderAfter);
+                borderAfterInput.value = customBorderAfter;
 
                 try {
                     const caps = videoTrack.getCapabilities();
