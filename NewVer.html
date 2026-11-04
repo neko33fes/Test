@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>文字比對系統 - 彈出選單版</title>
+    <title>工業級行動即時文字比對系統</title>
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
         html, body {
@@ -29,7 +29,6 @@
             gap: 6px;
             position: relative;
         }
-        /* 頂部標題列（含設定按鈕） */
         .header-bar {
             display: flex;
             justify-content: space-between;
@@ -71,14 +70,14 @@
             color: #777;
         }
 
-        /* 彈出式設定面板遮罩與內容 */
+        /* 彈出式設定面板 */
         .modal-overlay {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.75);
             backdrop-filter: blur(3px);
             z-index: 99;
-            display: none; /* 預設隱藏 */
+            display: none;
             justify-content: center;
             align-items: center;
             box-sizing: border-box;
@@ -140,9 +139,8 @@
         .video-container {
             position: relative;
             width: 100%;
-            height: 100%;
-            flex: 1;
-            min-height: 0;
+            height: 50%;
+            flex-shrink: 0;
             border-radius: 10px;
             overflow: hidden;
             border: 2px solid #444;
@@ -153,26 +151,36 @@
             justify-content: center;
             transition: height 0.2s ease;
         }
+        .video-wrapper-inner {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transform-origin: center center;
+            transition: transform 0.2s ease;
+        }
         video {
             width: 100%;
             height: 100%;
             object-fit: cover;
             display: block;
-            transform-origin: center center;
-            transition: transform 0.2s ease;
         }
         canvas {
             display: none;
         }
+        /* 黃色實線擷取框 */
         .scan-box {
             position: absolute;
             width: var(--box-size, 50%);
             height: var(--box-size, 50%);
-            border: 2px solid rgba(255, 235, 59, 0.8);
+            border: 2px solid rgba(255, 235, 59, 0.9);
             box-sizing: border-box;
             pointer-events: none;
             border-radius: 6px;
-            transition: width 0.2s ease, height 0.2s ease;
+            transition: width 0.1s ease, height 0.1s ease;
+            z-index: 10;
         }
         .status-box {
             padding: 10px;
@@ -190,7 +198,6 @@
 </head>
 <body>
     <div class="wrapper">
-        <!-- 頂部標題與設定按鈕 -->
         <div class="header-bar">
             <h2>文字比對系統</h2>
             <button class="config-btn" onclick="toggleModal(true)">⚙️ 設定</button>
@@ -228,7 +235,7 @@
                 </div>
 
                 <div class="control-row">
-                    <label>🔲 檢測框大小</label>
+                    <label>🔲 檢測框大小基準</label>
                     <select id="boxSelect" onchange="changeScanBoxSize(this)">
                         <option value="1.0">100% 框</option>
                         <option value="0.75">75% 框</option>
@@ -239,7 +246,7 @@
                 </div>
 
                 <div class="control-row">
-                    <label>🔍 鏡頭放大倍率</label>
+                    <label>🔍 畫面放大倍率 (全縮放連動)</label>
                     <select id="zoomSelect" onchange="changeZoom(this)">
                         <option value="1" selected>1x (正常)</option>
                         <option value="2">2x 放大</option>
@@ -252,9 +259,10 @@
             </div>
         </div>
 
-        <!-- 相機預覽區 (預設撐滿剩餘空間) -->
-        <div class="video-container" id="videoContainer">
-            <video id="video" autoplay playsinline muted></video>
+        <div class="video-container" id="videoContainer" style="height: 50%;">
+            <div class="video-wrapper-inner" id="videoWrapper">
+                <video id="video" autoplay playsinline muted></video>
+            </div>
             <div id="scanBox" class="scan-box" style="--box-size: 50%;"></div>
         </div>
         <canvas id="canvas"></canvas>
@@ -263,6 +271,7 @@
 
     <script>
         const video = document.getElementById('video');
+        const videoWrapper = document.getElementById('videoWrapper');
         const canvas = document.getElementById('canvas');
         const statusBox = document.getElementById('statusBox');
         const expectedInput = document.getElementById('expectedText');
@@ -272,7 +281,7 @@
         
         let videoTrack = null, worker = null, isProcessing = false, scanTimer = null;
         let currentInterval = 2.5;
-        let currentBoxScale = 0.5; 
+        let baseBoxScale = 0.5;  
         let currentZoom = 1;       
 
         let failCount = 0; 
@@ -297,8 +306,8 @@
         }
 
         function changeScanBoxSize(selectObj) {
-            currentBoxScale = parseFloat(selectObj.value);
-            scanBox.style.setProperty('--box-size', (currentBoxScale * 100) + '%');
+            baseBoxScale = parseFloat(selectObj.value);
+            updateScanBoxDisplay();
         }
 
         function changeInterval(selectObj) {
@@ -307,22 +316,16 @@
             restartScanLoop();
         }
 
-        async function changeZoom(selectObj) {
+        function changeZoom(selectObj) {
             const zoomLevel = parseFloat(selectObj.value);
             currentZoom = zoomLevel;
+            videoWrapper.style.transform = `scale(${zoomLevel})`;
+            updateScanBoxDisplay();
+        }
 
-            if (videoTrack) {
-                try {
-                    const caps = videoTrack.getCapabilities();
-                    if (caps.zoom) {
-                        const targetZoom = Math.min(Math.max(zoomLevel, caps.zoom.min), caps.zoom.max);
-                        await videoTrack.applyConstraints({ advanced: [{ zoom: targetZoom }] });
-                        video.style.transform = 'scale(1)';
-                        return;
-                    }
-                } catch (e) {}
-            }
-            video.style.transform = `scale(${zoomLevel})`;
+        function updateScanBoxDisplay() {
+            const effectiveScale = baseBoxScale / currentZoom;
+            scanBox.style.setProperty('--box-size', (effectiveScale * 100) + '%');
         }
 
         async function initOCR() {
@@ -372,7 +375,6 @@
 
         async function processFrame() {
             if (!worker || video.readyState !== video.HAVE_ENOUGH_DATA) return;
-            
             if (isProcessing) return;
 
             const expected = expectedInput.value.replace(/[\s\r\n]+/g, '').trim().toUpperCase();
@@ -384,16 +386,20 @@
             }
 
             isProcessing = true;
-            
             const safetyTimeout = setTimeout(() => {
                 if (isProcessing) isProcessing = false;
             }, 8000);
 
             try {
                 const vW = video.videoWidth, vH = video.videoHeight;
-                const boxW = vW * currentBoxScale, boxH = vH * currentBoxScale;
-                const boxX = (vW - boxW) / 2, boxY = (vH - boxH) / 2;
-                canvas.width = boxW; canvas.height = boxH;
+                const effectiveScale = baseBoxScale / currentZoom;
+                const boxW = vW * effectiveScale;
+                const boxH = vH * effectiveScale;
+                const boxX = (vW - boxW) / 2;
+                const boxY = (vH - boxH) / 2;
+
+                canvas.width = boxW; 
+                canvas.height = boxH;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, boxW, boxH);
                 
