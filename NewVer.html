@@ -8,6 +8,7 @@
     <style>
         :root {
             --border-color: #000000FF;
+            --global-font-size: 2.0vh; /* 預設全域字體基準 */
         }
         html, body {
             height: 100%;
@@ -19,7 +20,7 @@
             text-align: center;
             box-sizing: border-box;
             overflow: hidden;
-            font-size: var(--global-font-size, 2vh);
+            font-size: var(--global-font-size);
         }
         .wrapper {
             width: 97.5vw;
@@ -31,13 +32,13 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            padding: 4px 2%;
+            padding: 0.4rem 2%;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: flex-start;
-            gap: 4px;
+            gap: 0.4rem;
         }
         .header-bar {
             display: flex;
@@ -45,7 +46,7 @@
             align-items: center;
             width: 100%;
             flex-shrink: 0;
-            padding: 0 4px;
+            padding: 0 0.4rem;
             box-sizing: border-box;
         }
         h2 {
@@ -55,28 +56,32 @@
         }
         .btn-group {
             display: flex;
-            gap: 6px;
+            gap: 0.5rem;
         }
+        /* 按鈕字體與 padding 隨全域字體動態放大 */
         .config-btn {
             background: var(--btn-bg, #1A1A1AFF);
             color: var(--btn-text, #39C5BBFF);
             border: 2px solid var(--border-color, #000000FF);
-            padding: 4px 10px;
+            padding: 0.4rem 0.8rem;
             font-size: 1rem;
             font-weight: bold;
-            border-radius: 6px;
+            border-radius: 0.4rem;
             cursor: pointer;
         }
         .input-group {
             width: 100%;
             flex-shrink: 0;
         }
+        /* 主目標輸入框：字體與 padding 隨全域字體動態放大 */
         input[type="text"].target-input {
-            padding: 6px;
+            padding: 0.4rem 0.8rem;
+            height: auto;
+            min-height: calc(1rem + 1.2rem);
             font-size: 1rem;
             width: 100%;
             box-sizing: border-box;
-            border-radius: 8px;
+            border-radius: 0.5rem;
             border: 2px solid var(--border-color, #000000FF);
             background: var(--input-bg, var(--bg-color, #404040FF));
             color: var(--input-text, #FFFFFFFF);
@@ -96,53 +101,67 @@
             justify-content: center;
             align-items: center;
             box-sizing: border-box;
-            padding: 16px;
+            padding: 12px;
         }
+        /* 彈跳視窗內部與項目全面採用動態 rem，隨全域字體等比例放大 */
         .modal-content {
             background: var(--bg-color, #404040FF);
             border: 2px solid #39C5BBFF;
-            border-radius: 12px;
+            border-radius: 0.8rem;
             width: 100%;
-            max-width: 340px;
-            padding: 16px;
+            max-width: min(96vw, 460px);
+            max-height: 88vh;
+            padding: 1rem;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 0.8rem;
             text-align: left;
-            max-height: 90vh;
             overflow-y: auto;
             font-size: 1rem;
         }
         .modal-content h3 {
-            margin: 0 0 2px 0;
-            font-size: 1rem;
+            margin: 0 0 0.2rem 0;
+            font-size: 1.1rem;
             text-align: center;
             color: #39C5BBFF;
         }
         .control-row {
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 0.3rem;
+            width: 100%;
+            box-sizing: border-box;
         }
         .control-row label {
-            font-size: 1rem;
+            font-size: 0.9rem;
             color: #DDDDDDFF;
+            line-height: 1.3;
         }
         .control-row-group {
             display: flex;
-            gap: 6px;
+            gap: 0.6rem;
+            width: 100%;
+            box-sizing: border-box;
         }
         .control-row-group .control-row {
             flex: 1;
+            min-width: 0;
         }
         .control-row-group.triple .control-row label {
-            font-size: 0.85rem;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
+        /* 彈跳視窗內的下拉選單：高度與內距隨全域字體同步放大 */
         .modal-content select {
-            padding: 6px 8px;
+            padding: 0.4rem 0.6rem;
+            height: auto;
+            min-height: calc(1rem + 1.2rem);
             font-size: 1rem;
-            border-radius: 6px;
+            line-height: normal;
+            border-radius: 0.4rem;
             border: 2px solid #333333FF;
             background: var(--bg-color, #404040FF);
             color: #FFFFFFFF;
@@ -152,10 +171,14 @@
             width: 100%;
             box-sizing: border-box;
         }
+        /* 彈跳視窗內的文字輸入框：字體、左右與上下 padding 隨全域字體同步放大 */
         .control-row input[type="text"] {
-            padding: 6px 8px;
+            padding: 0.4rem 0.6rem;
+            height: auto;
+            min-height: calc(1rem + 1.2rem);
             font-size: 1rem;
-            border-radius: 6px;
+            line-height: normal;
+            border-radius: 0.4rem;
             border: 2px solid #333333FF;
             background: #000000FF;
             color: #FFFFFFFF;
@@ -166,17 +189,18 @@
             box-sizing: border-box;
         }
         .close-modal-btn {
-            margin-top: 4px;
+            margin-top: 0.4rem;
             background: #39C5BBFF;
             color: #000000FF;
             border: none;
-            padding: 8px;
+            padding: 0.5rem;
             font-size: 1rem;
             font-weight: bold;
-            border-radius: 6px;
+            border-radius: 0.4rem;
             cursor: pointer;
             text-align: center;
             width: 100%;
+            box-sizing: border-box;
         }
         .video-container {
             position: relative;
@@ -184,7 +208,7 @@
             height: calc(var(--max-video-h, 70vh) * var(--container-scale, 0.5));
             flex-grow: 0;
             flex-shrink: 0;
-            border-radius: 10px;
+            border-radius: 0.6rem;
             overflow: hidden;
             border: 2px solid var(--border-color, #000000FF);
             background: var(--bg-color, #404040FF);
@@ -220,16 +244,16 @@
             border: 2px solid var(--scanbox-color, #39C5BB80);
             box-sizing: border-box;
             pointer-events: none;
-            border-radius: 8px;
+            border-radius: 0.5rem;
             transition: width 0.1s ease, height 0.1s ease;
             z-index: 10;
         }
         .status-box {
-            padding: 6px;
+            padding: 0.4rem;
             width: 100%;
             font-size: 1rem;
             font-weight: bold;
-            border-radius: 8px;
+            border-radius: 0.5rem;
             box-sizing: border-box;
             flex-shrink: 0;
         }
@@ -421,7 +445,7 @@
             const headerH = headerBar.offsetHeight;
             const inputH = inputGroup.offsetHeight;
             const statusH = statusBox.offsetHeight;
-            const availableH = wrapperH - headerH - inputH - statusH - 20;
+            const availableH = wrapperH - headerH - inputH - statusH - 16;
             if (availableH > 50) {
                 videoContainer.style.setProperty('--max-video-h', availableH + 'px');
             }
@@ -589,7 +613,7 @@
 
                 canvas.width = boxW; 
                 canvas.height = boxH;
-                const ctx = canvas.getContext('2d');
+                const `ctx` = canvas.getContext('2d');
                 ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, boxW, boxH);
 
                 const angles = [0, 90, 180, 270];
