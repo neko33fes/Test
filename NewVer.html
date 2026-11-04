@@ -8,7 +8,7 @@
     <style>
         :root {
             --border-color: #000000FF;
-            --global-font-size: 2.0vh; /* 預設全域字體基準 */
+            --global-font-size: 2.0vh;
         }
         html, body {
             height: 100%;
@@ -58,27 +58,26 @@
             display: flex;
             gap: 0.5rem;
         }
-        /* 按鈕字體與 padding 隨全域字體動態放大 */
         .config-btn {
             background: var(--btn-bg, #1A1A1AFF);
             color: var(--btn-text, #39C5BBFF);
             border: 2px solid var(--border-color, #000000FF);
-            padding: 0.4rem 0.8rem;
+            padding: 0.4em 0.8em;
             font-size: 1rem;
             font-weight: bold;
             border-radius: 0.4rem;
             cursor: pointer;
+            line-height: 1.2;
         }
         .input-group {
             width: 100%;
             flex-shrink: 0;
         }
-        /* 主目標輸入框：字體與 padding 隨全域字體動態放大 */
         input[type="text"].target-input {
-            padding: 0.4rem 0.8rem;
+            padding: 0.4em 0.8em;
             height: auto;
-            min-height: calc(1rem + 1.2rem);
             font-size: 1rem;
+            line-height: 1.2;
             width: 100%;
             box-sizing: border-box;
             border-radius: 0.5rem;
@@ -103,13 +102,12 @@
             box-sizing: border-box;
             padding: 12px;
         }
-        /* 彈跳視窗內部與項目全面採用動態 rem，隨全域字體等比例放大 */
         .modal-content {
             background: var(--bg-color, #404040FF);
             border: 2px solid #39C5BBFF;
             border-radius: 0.8rem;
             width: 100%;
-            max-width: min(96vw, 460px);
+            max-width: min(96vw, 480px);
             max-height: 88vh;
             padding: 1rem;
             box-sizing: border-box;
@@ -148,19 +146,31 @@
             flex: 1;
             min-width: 0;
         }
+        /* 保留三欄並排：微調間距與字型，確保三欄內的 8 碼色碼能完整呈現且不擠壓 */
+        .control-row-group.triple {
+            gap: 4px;
+        }
+        .control-row-group.triple .control-row {
+            min-width: 0;
+            flex: 1;
+        }
         .control-row-group.triple .control-row label {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            text-align: center;
         }
-        /* 彈跳視窗內的下拉選單：高度與內距隨全域字體同步放大 */
+        .control-row-group.triple .control-row input[type="text"] {
+            padding: 0.35em 0.2rem;
+            font-size: 0.85rem;
+            letter-spacing: -0.5px;
+        }
         .modal-content select {
-            padding: 0.4rem 0.6rem;
+            padding: 0.4em 0.6em;
             height: auto;
-            min-height: calc(1rem + 1.2rem);
             font-size: 1rem;
-            line-height: normal;
+            line-height: 1.2;
             border-radius: 0.4rem;
             border: 2px solid #333333FF;
             background: var(--bg-color, #404040FF);
@@ -171,13 +181,11 @@
             width: 100%;
             box-sizing: border-box;
         }
-        /* 彈跳視窗內的文字輸入框：字體、左右與上下 padding 隨全域字體同步放大 */
         .control-row input[type="text"] {
-            padding: 0.4rem 0.6rem;
+            padding: 0.4em 0.6em;
             height: auto;
-            min-height: calc(1rem + 1.2rem);
             font-size: 1rem;
-            line-height: normal;
+            line-height: 1.2;
             border-radius: 0.4rem;
             border: 2px solid #333333FF;
             background: #000000FF;
@@ -201,6 +209,7 @@
             text-align: center;
             width: 100%;
             box-sizing: border-box;
+            line-height: 1.2;
         }
         .video-container {
             position: relative;
@@ -256,6 +265,7 @@
             border-radius: 0.5rem;
             box-sizing: border-box;
             flex-shrink: 0;
+            line-height: 1.2;
         }
         .pending { background: var(--pending-bg, #EF6C00FF); color: var(--pending-text, #FFFFFFFF); }
         .pass { background: var(--pass-bg, #2E7D32FF); color: var(--pass-text, #FFFFFFFF); }
@@ -355,6 +365,7 @@
                         <input type="text" id="borderAfterInput" value="#404040FF" oninput="updateBorderAfter(this)">
                     </div>
                 </div>
+                <!-- 保留三欄並排，並透過最佳化 padding 與字元間距，讓 8 碼 Hex 在格子內完美顯示 -->
                 <div class="control-row-group triple">
                     <div class="control-row">
                         <label>PASS 狀態</label>
@@ -375,7 +386,7 @@
                 </div>
                 <div class="control-row">
                     <label>按鈕背景色 (#Hex)</label>
-                    <input type="text" id="btnBgInput" value="#1A1A1AFF" oninput="updateColorVar('--btn-bg', this)">
+                    <input type="text" id="btnBgInput" value="#1A1A1AFF" oninput="updateColorVar('--btn-text', this)">
                 </div>
                 <div class="control-row">
                     <label>按鈕文字顏色 (#Hex)</label>
@@ -613,7 +624,7 @@
 
                 canvas.width = boxW; 
                 canvas.height = boxH;
-                const `ctx` = canvas.getContext('2d');
+                const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, boxX, boxY, boxW, boxH, 0, 0, boxW, boxH);
 
                 const angles = [0, 90, 180, 270];
