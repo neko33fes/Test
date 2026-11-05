@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>工業級行動即時文字比對系統</title>
-    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <!-- 確保 CDN 網址完整未被截斷 -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         :root {
             --border-color: #000000FF;
@@ -146,7 +147,6 @@
             flex: 1;
             min-width: 0;
         }
-        /* 保留三欄並排：微調間距與字型，確保三欄內的 8 碼色碼能完整呈現且不擠壓 */
         .control-row-group.triple {
             gap: 4px;
         }
@@ -341,7 +341,7 @@
             </div>
         </div>
 
-        <!-- 顏色面板 -->
+        <!-- 顏色面板（已修正按鈕背景色變數綁定） -->
         <div id="colorModal" class="modal-overlay">
             <div class="modal-content">
                 <h3>顏色設定</h3>
@@ -365,7 +365,6 @@
                         <input type="text" id="borderAfterInput" value="#404040FF" oninput="updateBorderAfter(this)">
                     </div>
                 </div>
-                <!-- 保留三欄並排，並透過最佳化 padding 與字元間距，讓 8 碼 Hex 在格子內完美顯示 -->
                 <div class="control-row-group triple">
                     <div class="control-row">
                         <label>PASS 狀態</label>
@@ -386,7 +385,7 @@
                 </div>
                 <div class="control-row">
                     <label>按鈕背景色 (#Hex)</label>
-                    <input type="text" id="btnBgInput" value="#1A1A1AFF" oninput="updateColorVar('--btn-text', this)">
+                    <input type="text" id="btnBgInput" value="#1A1A1AFF" oninput="updateColorVar('--btn-bg', this)">
                 </div>
                 <div class="control-row">
                     <label>按鈕文字顏色 (#Hex)</label>
